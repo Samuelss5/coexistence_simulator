@@ -1,3 +1,5 @@
+from importlib.resources import path
+
 import numpy as np
 
 from source.geometry.angles import compute_multiple_doas, compute_multiple_relative_doas, compute_multiple_relative_doas_for_queue
@@ -427,22 +429,22 @@ class InterNetworkLinksBuilder:
         # Links between PN terminals and SN terminals
         # ___________________________________________    
 
-        pn_term_sn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_term_pn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_to_sn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_term_to_pn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
         # ___________________________________________
         # Links between PN terminals and SN stations
         # ___________________________________________ 
 
-        pn_term_sn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_pn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_to_sn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_stat_to_pn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
         # ___________________________________________
         # Links between PN stations and SN stations
         # ___________________________________________ 
 
-        pn_stat_sn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_pn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_stat_to_sn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_stat_to_pn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
 
 
@@ -455,11 +457,11 @@ class InterNetworkLinksBuilder:
             # Links between PN terminals and SN terminals
             # ___________________________________________            
 
-            pn_term_sn_term_r_doas_full[ite] = compute_multiple_relative_doas(
+            pn_term_to_sn_term_r_doas_full[ite] = compute_multiple_relative_doas(
                 pn_term_coords[ite], sn_term_coords[ite], *pn_term_bsights[ite], num_pn_panels, num_sn_panels
             )
 
-            sn_term_pn_term_r_doas_full[ite] = compute_multiple_relative_doas(
+            sn_term_to_pn_term_r_doas_full[ite] = compute_multiple_relative_doas(
                 sn_term_coords[ite], pn_term_coords[ite], *sn_term_bsights[ite], num_sn_panels, num_pn_panels
             )
 
@@ -472,8 +474,8 @@ class InterNetworkLinksBuilder:
             # Links between PN terminals and SN stations
             # ___________________________________________ 
 
-            pn_term_sn_stat_r_doas_h = np.zeros((num_pn_term, num_sn_stat, num_pn_panels, num_sn_arrays), dtype=float)
-            pn_term_sn_stat_r_doas_v = np.zeros((num_pn_term, num_sn_stat, num_pn_panels, num_sn_arrays), dtype=float)
+            pn_term_to_sn_stat_r_doas_h = np.zeros((num_pn_term, num_sn_stat, num_pn_panels, num_sn_arrays), dtype=float)
+            pn_term_to_sn_stat_r_doas_v = np.zeros((num_pn_term, num_sn_stat, num_pn_panels, num_sn_arrays), dtype=float)
 
             processes = []
             queues    = []
@@ -492,17 +494,17 @@ class InterNetworkLinksBuilder:
                 idx_b = i * aps_division
                 idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
 
-                pn_term_sn_stat_r_doas_h[:, idx_b:idx_e], pn_term_sn_stat_r_doas_v[:, idx_b:idx_e] = queues[i].get()
+                pn_term_to_sn_stat_r_doas_h[:, idx_b:idx_e], pn_term_to_sn_stat_r_doas_v[:, idx_b:idx_e] = queues[i].get()
 
 
-            pn_term_sn_stat_r_doas_full[ite] = (pn_term_sn_stat_r_doas_h, pn_term_sn_stat_r_doas_v)
+            pn_term_to_sn_stat_r_doas_full[ite] = (pn_term_to_sn_stat_r_doas_h, pn_term_to_sn_stat_r_doas_v)
 
             for P in processes:
                 P.join()
 
 
-            sn_stat_pn_term_r_doas_h = np.zeros((num_sn_stat, num_pn_term, num_sn_arrays, num_pn_panels), dtype=float)
-            sn_stat_pn_term_r_doas_v = np.zeros((num_sn_stat, num_pn_term, num_sn_arrays, num_pn_panels), dtype=float)
+            sn_stat_to_pn_term_r_doas_h = np.zeros((num_sn_stat, num_pn_term, num_sn_arrays, num_pn_panels), dtype=float)
+            sn_stat_to_pn_term_r_doas_v = np.zeros((num_sn_stat, num_pn_term, num_sn_arrays, num_pn_panels), dtype=float)
 
             processes = []
             queues    = []
@@ -519,9 +521,9 @@ class InterNetworkLinksBuilder:
                 idx_b = i * aps_division
                 idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
 
-                sn_stat_pn_term_r_doas_h[idx_b:idx_e], sn_stat_pn_term_r_doas_v[idx_b:idx_e] = queues[i].get()
+                sn_stat_to_pn_term_r_doas_h[idx_b:idx_e], sn_stat_to_pn_term_r_doas_v[idx_b:idx_e] = queues[i].get()
 
-            sn_stat_pn_term_r_doas_full[ite] = (sn_stat_pn_term_r_doas_h, sn_stat_pn_term_r_doas_v)
+            sn_stat_to_pn_term_r_doas_full[ite] = (sn_stat_to_pn_term_r_doas_h, sn_stat_to_pn_term_r_doas_v)
 
             for P in processes:
                 P.join()
@@ -549,14 +551,14 @@ class InterNetworkLinksBuilder:
                 idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
                 pn_stat_sn_stat_r_doas_h[:, idx_b:idx_e], pn_stat_sn_stat_r_doas_v[:, idx_b:idx_e] = queues[i].get()
 
-            pn_stat_sn_stat_r_doas_full[ite] = (pn_stat_sn_stat_r_doas_h, pn_stat_sn_stat_r_doas_v)
+            pn_stat_to_sn_stat_r_doas_full[ite] = (pn_stat_sn_stat_r_doas_h, pn_stat_sn_stat_r_doas_v)
 
             for P in processes:
                 P.join()
 
 
-            sn_stat_pn_stat_r_doas_h = np.zeros((num_sn_stat, num_pn_stat, num_sn_arrays, num_pn_arrays), dtype=float)
-            sn_stat_pn_stat_r_doas_v = np.zeros((num_sn_stat, num_pn_stat, num_sn_arrays, num_pn_arrays), dtype=float)
+            sn_stat_to_pn_stat_r_doas_h = np.zeros((num_sn_stat, num_pn_stat, num_sn_arrays, num_pn_arrays), dtype=float)
+            sn_stat_to_pn_stat_r_doas_v = np.zeros((num_sn_stat, num_pn_stat, num_sn_arrays, num_pn_arrays), dtype=float)
 
             processes = []
             queues = []
@@ -572,20 +574,19 @@ class InterNetworkLinksBuilder:
             for i in range(num_aps_groups):
                 idx_b = i * aps_division
                 idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-                sn_stat_pn_stat_r_doas_h[idx_b:idx_e], sn_stat_pn_stat_r_doas_v[idx_b:idx_e] = queues[i].get()
+                sn_stat_to_pn_stat_r_doas_h[idx_b:idx_e], sn_stat_to_pn_stat_r_doas_v[idx_b:idx_e] = queues[i].get()
 
-            sn_stat_pn_stat_r_doas_full[ite] = (sn_stat_pn_stat_r_doas_h, sn_stat_pn_stat_r_doas_v)
+            sn_stat_to_pn_stat_r_doas_full[ite] = (sn_stat_to_pn_stat_r_doas_h, sn_stat_to_pn_stat_r_doas_v)
 
         
-        self.pn_term_sn_term_r_doas_full = pn_term_sn_term_r_doas_full
-        self.sn_term_pn_term_r_doas_full = sn_term_pn_term_r_doas_full
+        self.pn_term_to_sn_term_r_doas_full = pn_term_to_sn_term_r_doas_full
+        self.sn_term_to_pn_term_r_doas_full = sn_term_to_pn_term_r_doas_full
 
-        self.pn_term_sn_stat_r_doas_full = pn_term_sn_stat_r_doas_full
-        self.sn_stat_pn_term_r_doas_full = sn_stat_pn_term_r_doas_full
+        self.pn_term_to_sn_stat_r_doas_full = pn_term_to_sn_stat_r_doas_full
+        self.sn_stat_to_pn_term_r_doas_full = sn_stat_to_pn_term_r_doas_full
 
-        self.pn_stat_sn_stat_r_doas_full = pn_stat_sn_stat_r_doas_full
-        self.sn_stat_pn_stat_r_doas_full = sn_stat_pn_stat_r_doas_full
-        
+        self.pn_stat_to_sn_stat_r_doas_full = pn_stat_to_sn_stat_r_doas_full
+        self.sn_stat_to_pn_stat_r_doas_full = sn_stat_to_pn_stat_r_doas_full
 
 
 
@@ -610,54 +611,88 @@ class InterNetworkLinksBuilder:
         # Links between PN terminals and SN terminals
         # ___________________________________________ 
 
-        pn_term_sn_term_lsg_coeffs_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        pn_term_sn_term_K_coeffs_full  = np.empty(self.num_snapshots, dtype=np.ndarray)
+        ### 1. Large scale fading and Rician K-factor
+        pn_term_sn_term_ls_fading_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_sn_term_K_full         = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        # ___________________________________________
-        # Links between PN terminals and SN stations
-        # ___________________________________________ 
+        ### 2. Antenna gains
+        pn_term_to_sn_term_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_term_to_pn_term_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        pn_term_sn_stat_lsg_coeffs_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        pn_term_sn_stat_K_coeffs_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        # ___________________________________________
-        # Links between PN stations and SN stations
-        # ___________________________________________  
-
-        pn_stat_sn_stat_lsg_coeffs_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        pn_stat_sn_stat_K_coeffs_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+        ### 3. Large scale gains
+        pn_term_sn_term_ls_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
 
 
-        # ___________________________________________
-        # Links between PN terminals and SN stations
-        # ___________________________________________   
+    # ______________________________________________________________________________________
+    #   Links between PN terminals and SN stations
+    # ______________________________________________________________________________________ 
 
-        # Since the APs and the FS receiver are fixed, the lsf don't change
+        ### 1. Storage of Large scale fading and Rician K-factor
+        pn_term_sn_stat_ls_fading_full = np.zeros(self.num_snapshots, dtype=np.ndarray)
+        pn_term_sn_stat_K_full         = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        pn_term_sn_stat_lsf_coeffs, pn_term_sn_stat_K_coeffs = self.pn_conf.methods["lsf_model"].compute(
-            pn_term_coords[0], sn_stat_coords[0], pn_term_height, sn_stat_height, fc, rng, None
-        )
+        ### 2. Storage of Antenna gain
+        pn_term_to_sn_stat_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_stat_to_pn_term_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        pn_term_sn_stat_gains = self.pn_conf.methods["terminal_antenna_gain"].compute(*self.pn_term_sn_stat_r_doas_full[0])
-        sn_stat_pn_term_gains = self.sn_conf.methods["station_antenna_gain"].compute( *self.sn_stat_pn_term_r_doas_full[0])
-
-        pn_term_sn_stat_lsg_coeffs = pn_term_sn_stat_lsf_coeffs[:, :, np.newaxis, np.newaxis] * pn_term_sn_stat_gains * sn_stat_pn_term_gains.transpose(1,0,3,2)
+        ### 3. Storage of Large scale gains
+        pn_term_sn_stat_ls_gain_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
 
-        # ___________________________________________
-        # Links between PN stations and SN stations
-        # ___________________________________________  
+        ### 1. Computing of Large scale fading and Rician K-factor
+        (
+        pn_term_sn_stat_ls_fading, 
+        pn_term_sn_stat_K ) = self.pn_conf.methods["lsf_model"].compute( pn_term_coords[0], sn_stat_coords[0], pn_term_height, sn_stat_height, fc, rng, None)
 
-        # Since the APs and the FS transmitter are fixed, the lsf don't change
+        ### 2. Computing of Antenna gain
+        pn_term_to_sn_stat_gain = self.pn_conf.methods["terminal_antenna_gain"].compute(*self.pn_term_to_sn_stat_r_doas_full[0])
+        sn_stat_to_pn_term_gain = self.sn_conf.methods["station_antenna_gain"].compute( *self.sn_stat_to_pn_term_r_doas_full[0])
 
-        pn_stat_sn_stat_lsf_coeffs, pn_stat_sn_stat_K_coeffs = self.pn_conf.methods["lsf_model"].compute(
-            pn_stat_coords[0], sn_stat_coords[0], pn_stat_height, sn_stat_height, fc, rng, None
-        )
+        ### 3. Computing of Large scale gains
+        pn_term_sn_stat_ls_gain = (
+            pn_term_sn_stat_ls_fading[:, :, np.newaxis, np.newaxis] * 
+            pn_term_to_sn_stat_gain * 
+            sn_stat_to_pn_term_gain.transpose(1,0,3,2) 
+            )
 
-        pn_stat_sn_stat_gains = self.pn_conf.methods["station_antenna_gain"].compute(*self.pn_stat_sn_stat_r_doas_full[0])
-        sn_stat_pn_stat_gains = self.sn_conf.methods["station_antenna_gain"].compute(*self.sn_stat_pn_stat_r_doas_full[0])
+        
 
-        pn_stat_sn_stat_lsg_coeffs = pn_stat_sn_stat_lsf_coeffs[:, :, np.newaxis, np.newaxis] * pn_stat_sn_stat_gains * sn_stat_pn_stat_gains.transpose(1,0,3,2)
+
+    # ______________________________________________________________________________________
+    #   Links between PN stations and SN stations
+    # ______________________________________________________________________________________
+        ### 1. Storage of Large scale fading and Rician K-factor
+        pn_stat_sn_stat_ls_fading_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_stat_sn_stat_K_full         = np.empty(self.num_snapshots, dtype=np.ndarray)
+
+        ### 2. Storage of Antenna gain
+        pn_stat_to_sn_stat_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_stat_to_pn_stat_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+
+        ### 3. Storage of Large scale gains
+        pn_stat_sn_stat_ls_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+
+
+        ### 1. Computing of Large scale fading and Rician K-factor
+        (
+        pn_stat_sn_stat_ls_fading, 
+        pn_stat_sn_stat_K) = self.pn_conf.methods["lsf_model"].compute(pn_stat_coords[0], sn_stat_coords[0], pn_stat_height, sn_stat_height, fc, rng, None)
+        
+        ### 2. Computing of Antenna gain
+        pn_stat_to_sn_stat_gain = self.pn_conf.methods["station_antenna_gain"].compute(*self.pn_stat_to_sn_stat_r_doas_full[0])
+        sn_stat_to_pn_stat_gain = self.sn_conf.methods["station_antenna_gain"].compute(*self.sn_stat_to_pn_stat_r_doas_full[0])
+                
+        ### 3. Computing of Large scale gains
+        pn_stat_sn_stat_ls_gain = (
+            pn_stat_sn_stat_ls_fading[:, :, np.newaxis, np.newaxis] * 
+            pn_stat_to_sn_stat_gain * 
+            sn_stat_to_pn_stat_gain.transpose(1,0,3,2) 
+                    )
+
+    
+
+        
+        
 
         for ite in range(self.num_snapshots):
 
@@ -665,58 +700,85 @@ class InterNetworkLinksBuilder:
             # Links between PN terminals and SN terminals
             # ___________________________________________    
 
-            pn_term_sn_term_lsf_coeffs, pn_term_sn_term_K_coeffs = self.pn_conf.methods["lsf_model"].compute(
-                pn_term_coords[ite], sn_term_coords[ite], pn_term_height, sn_term_height, fc, rng, None
-            )
+            ### 1. Computing of Large scale fading and Rician K-factors
+            (
+            pn_term_sn_term_ls_fading, 
+            pn_term_sn_term_K) = self.pn_conf.methods["lsf_model"].compute(pn_term_coords[ite], sn_term_coords[ite], pn_term_height, sn_term_height, fc, rng, None)
 
-            pn_term_sn_term_gains = self.pn_conf.methods["terminal_antenna_gain"].compute(*self.pn_term_sn_term_r_doas_full[ite])
-            sn_term_pn_term_gains = self.sn_conf.methods["terminal_antenna_gain"].compute(*self.sn_term_pn_term_r_doas_full[ite])
+            pn_term_sn_term_ls_fading_full[ite] = pn_term_sn_term_ls_fading
+            pn_term_sn_term_K_full  [ite] = pn_term_sn_term_K
 
-            pn_term_sn_term_lsg_coeffs = pn_term_sn_term_lsf_coeffs[:, :, np.newaxis, np.newaxis] * pn_term_sn_term_gains * sn_term_pn_term_gains.transpose(1,0,3,2)
+            ### 2. Computing of Antenna gains
+            pn_term_to_sn_term_gain = self.pn_conf.methods["terminal_antenna_gain"].compute(*self.pn_term_to_sn_term_r_doas_full[ite])
+            sn_term_to_pn_term_gain = self.sn_conf.methods["terminal_antenna_gain"].compute(*self.sn_term_to_pn_term_r_doas_full[ite])
 
-            pn_term_sn_term_lsg_coeffs_full[ite] = pn_term_sn_term_lsg_coeffs
-            pn_term_sn_term_K_coeffs_full[ite]   = pn_term_sn_term_K_coeffs
+            pn_term_to_sn_term_gain_full[ite] = pn_term_to_sn_term_gain
+            sn_term_to_pn_term_gain_full[ite] = sn_term_to_pn_term_gain
 
-            # ___________________________________________
-            # Links between PN terminals and SN stations
-            # ___________________________________________   
+            ### 3. Computing of Large scale gains
+            pn_term_sn_term_ls_gain = (
+                pn_term_sn_term_ls_fading[:, :, np.newaxis, np.newaxis] * 
+                pn_term_to_sn_term_gain * 
+                sn_term_to_pn_term_gain.transpose(1,0,3,2) 
+                )
 
-            pn_term_sn_stat_lsg_coeffs_full[ite] = pn_term_sn_stat_lsg_coeffs
-            pn_term_sn_stat_K_coeffs_full[ite]   = pn_term_sn_stat_K_coeffs
-
-            # ___________________________________________
-            # Links between PN stations and SN stations
-            # ___________________________________________  
-
-            pn_stat_sn_stat_lsg_coeffs_full[ite] = pn_stat_sn_stat_lsg_coeffs
-            pn_stat_sn_stat_K_coeffs_full[ite]   = pn_stat_sn_stat_K_coeffs
+            pn_term_sn_term_ls_gain_full[ite] = pn_term_sn_term_ls_gain
 
 
-        self.pn_term_sn_term_lsg_coeffs_full = pn_term_sn_term_lsg_coeffs_full
-        self.pn_term_sn_term_K_coeffs_full   = pn_term_sn_term_K_coeffs_full
+            ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the ls parameters don't change
+            pn_term_sn_stat_ls_fading_full[ite] = pn_term_sn_stat_ls_fading
+            pn_term_sn_stat_K_full  [ite] = pn_term_sn_stat_K
+            pn_term_to_sn_stat_gain_full  [ite] = pn_term_to_sn_stat_gain 
+            sn_stat_to_pn_term_gain_full  [ite] = sn_stat_to_pn_term_gain
+            pn_term_sn_stat_ls_gain_full  [ite] = pn_term_sn_stat_ls_gain       
 
-        self.pn_term_sn_stat_lsg_coeffs_full = pn_term_sn_stat_lsg_coeffs_full
-        self.pn_term_sn_stat_K_coeffs_full   = pn_term_sn_stat_K_coeffs_full
 
-        self.pn_stat_sn_stat_lsg_coeffs_full = pn_stat_sn_stat_lsg_coeffs_full
-        self.pn_stat_sn_stat_K_coeffs_full   = pn_stat_sn_stat_K_coeffs_full
+            ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the ls parameters don't change
+            pn_stat_sn_stat_ls_fading_full[ite] = pn_stat_sn_stat_ls_fading
+            pn_stat_sn_stat_K_full  [ite] = pn_stat_sn_stat_K
+            pn_stat_to_sn_stat_gain_full  [ite] = pn_stat_to_sn_stat_gain 
+            sn_stat_to_pn_stat_gain_full  [ite] = sn_stat_to_pn_stat_gain
+            pn_stat_sn_stat_ls_gain_full  [ite] = pn_stat_sn_stat_ls_gain
+
+
+        self.pn_term_sn_term_ls_fading_full = pn_term_sn_term_ls_fading_full
+        self.pn_term_sn_term_ls_gain_full   = pn_term_sn_term_ls_gain_full
+        self.pn_term_sn_term_K_full         = pn_term_sn_term_K_full
+
+        self.pn_term_sn_stat_ls_fading_full = pn_term_sn_stat_ls_fading_full
+        self.pn_term_sn_stat_ls_gain_full   = pn_term_sn_stat_ls_gain_full
+        self.pn_term_sn_stat_K_full         = pn_term_sn_stat_K_full
+
+        self.pn_stat_sn_stat_ls_fading_full = pn_stat_sn_stat_ls_fading_full
+        self.pn_stat_sn_stat_ls_gain_full   = pn_stat_sn_stat_ls_gain_full
+        self.pn_stat_sn_stat_K_full         = pn_stat_sn_stat_K_full
 
 
         path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/InterNetwork/lsg_parameters/'
 
-        np.savez(path + 'pn_term_sn_term_lsg_coeffs_full.npz', pn_term_sn_term_lsg_coeffs = self.pn_term_sn_term_lsg_coeffs_full)
-        np.savez(path + 'pn_term_sn_term_K_coeffs_full.npz', pn_term_sn_term_K_coeffs = self.pn_term_sn_term_K_coeffs_full)
+        np.savez(path + 'pn_term_sn_term_ls_fading_full.npz', pn_term_sn_term_ls_fading = self.pn_term_sn_term_ls_fading_full)
+        np.savez(path + 'pn_term_sn_term_ls_gain_full.npz',   pn_term_sn_term_ls_gain   = self.pn_term_sn_term_ls_gain_full)
+        np.savez(path + 'pn_term_sn_term_K_full.npz',         pn_term_sn_term_K         = self.pn_term_sn_term_K_full)
 
-        np.savez(path + 'pn_term_sn_stat_lsg_coeffs_full.npz', pn_term_sn_stat_lsg_coeffs = self.pn_term_sn_stat_lsg_coeffs_full)
-        np.savez(path + 'pn_term_sn_stat_K_coeffs_full.npz', pn_term_sn_stat_K_coeffs = self.pn_term_sn_stat_K_coeffs_full)
 
-        np.savez(path + 'pn_stat_sn_stat_lsg_coeffs_full.npz', pn_stat_sn_stat_lsg_coeffs = self.pn_stat_sn_stat_lsg_coeffs_full)
-        np.savez(path + 'pn_stat_sn_stat_K_coeffs_full.npz', pn_stat_sn_stat_K_coeffs = self.pn_stat_sn_stat_K_coeffs_full)
+        np.savez(path + 'pn_term_sn_stat_ls_fading_full.npz', pn_term_sn_stat_ls_fading = self.pn_term_sn_stat_ls_fading_full)
+        np.savez(path + 'pn_term_sn_stat_ls_gain_full.npz',   pn_term_sn_stat_ls_gain   = self.pn_term_sn_stat_ls_gain_full)
+        np.savez(path + 'pn_term_sn_stat_K_full.npz',         pn_term_sn_stat_K         = self.pn_term_sn_stat_K_full)
+
+        np.savez(path + 'pn_stat_sn_stat_ls_fading_full.npz', pn_stat_sn_stat_ls_fading = self.pn_stat_sn_stat_ls_fading_full)
+        np.savez(path + 'pn_stat_sn_stat_ls_gain_full.npz',   pn_stat_sn_stat_ls_gain   = self.pn_stat_sn_stat_ls_gain_full)
+        np.savez(path + 'pn_stat_sn_stat_K_full.npz',         pn_stat_sn_stat_K         = self.pn_stat_sn_stat_K_full)
     
 
 
     def compute_R_matrices(self):
 
+        """
+        
+        Compute the spatial correlation matrices for internetwork links. 
+        The matrices are computed for each snapshot and stored in arrays for later use.
+        
+        """
 
         pn_panel_N_h = 1
         pn_panel_N_v = 1
@@ -730,96 +792,97 @@ class InterNetworkLinksBuilder:
         sn_array_N_h = self.sn_conf.array_N_h
         sn_array_N_v = self.sn_conf.array_N_v
 
-        pn_term_sn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_term_pn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        ### OBS: The default is [RX] -> [TX] for the R matrices, so the first argument is always the RX and the second is always the TX
 
-        pn_term_sn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_pn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        ### Storage of the R matrices for each snapshot
+        pn_term_to_sn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_term_to_pn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        pn_stat_sn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_pn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        ### Storage of the R matrices for each snapshot
+        pn_term_to_sn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_stat_to_pn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        # ___________________________________________
+        ### Storage of the R matrices for each snapshot
+        pn_stat_to_sn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        sn_stat_to_pn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+
+        # ______________________________________________________________________________________
         # Links between PN terminals and SN stations
-        # ___________________________________________    
+        # ______________________________________________________________________________________
 
-        pn_term_sn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(
-            *self.pn_term_sn_stat_r_doas_full[0], pn_panel_N_v, pn_panel_N_v
-        )
+        ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the R matrices don't change
 
-        sn_stat_pn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(
-            *self.sn_stat_pn_term_r_doas_full[0], sn_array_N_h, sn_array_N_v
-        )
+        pn_term_to_sn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.pn_term_to_sn_stat_r_doas_full[0], pn_panel_N_v, pn_panel_N_v)
 
-        # ___________________________________________
+        sn_stat_to_pn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.sn_stat_to_pn_term_r_doas_full[0], sn_array_N_h, sn_array_N_v)
+
+
+
+        # ______________________________________________________________________________________
         # Links between PN stations and SN stations
-        # ___________________________________________    
+        # ______________________________________________________________________________________    
 
-        pn_stat_sn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(
-            *self.pn_stat_sn_stat_r_doas_full[0], pn_array_N_h, pn_array_N_v
-        )
+        ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the R matrices don't change
 
-        sn_stat_pn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(
-            *self.sn_stat_pn_stat_r_doas_full[0], sn_array_N_h, sn_array_N_v
-        )
-        
+        pn_stat_to_sn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.pn_stat_to_sn_stat_r_doas_full[0], pn_array_N_h, pn_array_N_v)
+
+        sn_stat_to_pn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.sn_stat_to_pn_stat_r_doas_full[0], sn_array_N_h, sn_array_N_v)
+
+
         for ite in range(self.num_snapshots):
 
             # ___________________________________________
             # Links between PN terminals and SN terminals
             # ___________________________________________    
 
-            pn_term_sn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(
-                *self.pn_term_sn_term_r_doas_full[ite], pn_panel_N_v, pn_panel_N_v
-            )
+            pn_term_to_sn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.pn_term_to_sn_term_r_doas_full[ite], pn_panel_N_v, pn_panel_N_v)
 
-            sn_term_pn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(
-                *self.sn_term_pn_term_r_doas_full[ite], sn_panel_N_h, sn_panel_N_v
-            )
+            sn_term_to_pn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.sn_term_to_pn_term_r_doas_full[ite], sn_panel_N_h, sn_panel_N_v)
 
-            pn_term_sn_term_R_matrices_full[ite] = pn_term_sn_term_R_matrices
-            sn_term_pn_term_R_matrices_full[ite] = sn_term_pn_term_R_matrices
+            pn_term_to_sn_term_R_matrices_full[ite] = pn_term_to_sn_term_R_matrices
+            sn_term_to_pn_term_R_matrices_full[ite] = sn_term_to_pn_term_R_matrices
 
-            # ___________________________________________
-            # Links between PN terminals and SN stations
-            # ___________________________________________    
 
-            pn_term_sn_stat_R_matrices_full[ite] = pn_term_sn_stat_R_matrices
-            sn_stat_pn_term_R_matrices_full[ite] = sn_stat_pn_term_R_matrices
+            ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the R matrices don't change
+            pn_term_to_sn_stat_R_matrices_full[ite] = pn_term_to_sn_stat_R_matrices
+            sn_stat_to_pn_term_R_matrices_full[ite] = sn_stat_to_pn_term_R_matrices
 
-        
-            # ___________________________________________
-            # Links between PN stations and SN stations
-            # ___________________________________________    
+            ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the R matrices don't change
+            pn_stat_to_sn_stat_R_matrices_full[ite] = pn_stat_to_sn_stat_R_matrices
+            sn_stat_to_pn_stat_R_matrices_full[ite] = sn_stat_to_pn_stat_R_matrices
 
-            pn_stat_sn_stat_R_matrices_full[ite] = pn_stat_sn_stat_R_matrices
-            sn_stat_pn_stat_R_matrices_full[ite] = sn_stat_pn_stat_R_matrices
 
-        
-        self.pn_term_sn_term_R_matrices_full = pn_term_sn_term_R_matrices_full
-        self.sn_term_pn_term_R_matrices_full = sn_term_pn_term_R_matrices_full
+        self.pn_term_to_sn_term_R_matrices_full = pn_term_to_sn_term_R_matrices_full
+        self.sn_term_to_pn_term_R_matrices_full = sn_term_to_pn_term_R_matrices_full
 
-        self.pn_term_sn_stat_R_matrices_full = pn_term_sn_stat_R_matrices_full
-        self.sn_stat_pn_term_R_matrices_full = sn_stat_pn_term_R_matrices_full
+        self.pn_term_to_sn_stat_R_matrices_full = pn_term_to_sn_stat_R_matrices_full
+        self.sn_stat_to_pn_term_R_matrices_full = sn_stat_to_pn_term_R_matrices_full
 
-        self.pn_stat_sn_stat_R_matrices_full = pn_stat_sn_stat_R_matrices_full
-        self.sn_stat_pn_stat_R_matrices_full = sn_stat_pn_stat_R_matrices_full
+        self.pn_stat_to_sn_stat_R_matrices_full = pn_stat_to_sn_stat_R_matrices_full
+        self.sn_stat_to_pn_stat_R_matrices_full = sn_stat_to_pn_stat_R_matrices_full
 
         path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/InterNetwork/R_matrices/'
 
-        np.savez(path + 'pn_term_sn_term_R_matrices_full', pn_term_sn_term_R_matrices = self.pn_term_sn_term_R_matrices_full)
-        np.savez(path + 'sn_term_pn_term_R_matrices_full', sn_term_pn_term_R_matrices = self.sn_term_pn_term_R_matrices_full)
+        np.savez(path + 'pn_term_sn_term_R_matrices_full', pn_term_sn_term_R_matrices = self.pn_term_to_sn_term_R_matrices_full)
+        np.savez(path + 'sn_term_pn_term_R_matrices_full', sn_term_pn_term_R_matrices = self.sn_term_to_pn_term_R_matrices_full)
 
-        np.savez(path + 'pn_term_sn_stat_R_matrices_full', pn_term_sn_stat_R_matrices = self.pn_term_sn_stat_R_matrices_full)
-        np.savez(path + 'sn_stat_pn_term_R_matrices_full', sn_stat_pn_term_R_matrices = self.sn_stat_pn_term_R_matrices_full)
+        np.savez(path + 'pn_term_sn_stat_R_matrices_full', pn_term_sn_stat_R_matrices = self.pn_term_to_sn_stat_R_matrices_full)
+        np.savez(path + 'sn_stat_pn_term_R_matrices_full', sn_stat_pn_term_R_matrices = self.sn_stat_to_pn_term_R_matrices_full)
 
-        np.savez(path + 'pn_stat_sn_stat_R_matrices_full', pn_stat_sn_stat_R_matrices = self.pn_stat_sn_stat_R_matrices_full)
-        np.savez(path + 'sn_stat_pn_stat_R_matrices_full', sn_stat_pn_stat_R_matrices = self.sn_stat_pn_stat_R_matrices_full)
+        np.savez(path + 'pn_stat_sn_stat_R_matrices_full', pn_stat_sn_stat_R_matrices = self.pn_stat_to_sn_stat_R_matrices_full)
+        np.savez(path + 'sn_stat_pn_stat_R_matrices_full', sn_stat_pn_stat_R_matrices = self.sn_stat_to_pn_stat_R_matrices_full)
 
 
 
 
     def generate_channels(self, rng):
+
+        """
+        
+        Generate the channel coefficients for internetwork links.
+        The coefficients are generated for each snapshot and stored in arrays for later use.
+        
+        """
 
         pn_panel_N_h = 1
         pn_panel_N_v = 1
@@ -837,77 +900,89 @@ class InterNetworkLinksBuilder:
         # Links between PN terminals and SN terminals
         # ___________________________________________  
 
-        pn_term_sn_term_H_coeffs_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_sn_term_H_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
         # ___________________________________________
         # Links between PN terminals and SN stations
         # ___________________________________________  
 
-        pn_term_sn_stat_H_coeffs_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_sn_stat_H_full = np.empty(self.num_snapshots, dtype=np.ndarray)
         
         # ___________________________________________
         # Links between PN stations and SN stations
         # ___________________________________________  
 
-        pn_stat_sn_stat_H_coeffs_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_stat_sn_stat_H_full = np.empty(self.num_snapshots, dtype=np.ndarray)
 
 
         
         for ite in range(self.num_snapshots):
 
-            pn_term_sn_term_H_coeffs = self.pn_conf.methods["channel_model"].generate_multiple_channels(
-                    self.pn_term_sn_term_lsg_coeffs_full[ite], self.pn_term_sn_term_K_coeffs_full[ite][:, :, np.newaxis, np.newaxis],
-                    self.pn_term_sn_term_R_matrices_full[ite], self.sn_term_pn_term_R_matrices_full[ite],
-                    *self.pn_term_sn_term_r_doas_full[ite], *self.sn_term_pn_term_r_doas_full[ite],
-                    pn_panel_N_h, pn_panel_N_v,
-                    sn_panel_N_h, sn_panel_N_v,
-                    rng
-                )
 
-            pn_term_sn_term_H_coeffs_full[ite] = pn_term_sn_term_H_coeffs
+            # 1. Generate the channel coefficients for the links between PN terminals and SN terminals
+            pn_term_sn_term_H = self.pn_conf.methods["channel_model"].generate_multiple_channels(
+                gain_Coefficients = self.pn_term_sn_term_ls_gain_full[ite],
+                K_Coefficients = self.pn_term_sn_term_K_full[ite][:, :, np.newaxis, np.newaxis],
+                rx_R_Matrixes = self.pn_term_to_sn_term_R_matrices_full[ite],
+                tx_R_Matrixes = self.sn_term_to_pn_term_R_matrices_full[ite],
+                rx_relative_AoAs_h = self.pn_term_to_sn_term_r_doas_full[ite][0],
+                rx_relative_AoAs_v = self.pn_term_to_sn_term_r_doas_full[ite][1],
+                tx_relative_AoAs_h = self.sn_term_to_pn_term_r_doas_full[ite][0],
+                tx_relative_AoAs_v = self.sn_term_to_pn_term_r_doas_full[ite][1],
+                N_h_rx = pn_panel_N_h, N_v_rx = pn_panel_N_v,
+                N_h_tx = sn_panel_N_h, N_v_tx = sn_panel_N_v,
+                rng = rng
+            )
+            pn_term_sn_term_H_full[ite] = pn_term_sn_term_H
 
 
-            # ___________________________________________
-            # Links between PN terminals and SN stations
-            # ___________________________________________  
+            # 2. Generate the channel coefficients for the links between PN terminals and SN stations
+            pn_term_sn_stat_H = self.pn_conf.methods["channel_model"].generate_multiple_channels(
 
-            pn_term_sn_stat_H_coeffs = self.pn_conf.methods["channel_model"].generate_multiple_channels(
-                self.pn_term_sn_stat_lsg_coeffs_full[ite], self.pn_term_sn_stat_K_coeffs_full[ite][:, :, np.newaxis, np.newaxis],
-                self.pn_term_sn_stat_R_matrices_full[ite], self.sn_stat_pn_term_R_matrices_full[ite],
-                *self.pn_term_sn_stat_r_doas_full[ite], *self.sn_stat_pn_term_r_doas_full[ite],
-                pn_panel_N_h, pn_panel_N_v,
-                sn_array_N_h, sn_array_N_v,
-                rng
+                gain_Coefficients = self.pn_term_sn_stat_ls_gain_full[ite],
+                K_Coefficients = self.pn_term_sn_stat_K_full[ite][:, :, np.newaxis, np.newaxis],
+                rx_R_Matrixes = self.pn_term_to_sn_stat_R_matrices_full[ite],
+                tx_R_Matrixes = self.sn_stat_to_pn_term_R_matrices_full[ite],
+                rx_relative_AoAs_h = self.pn_term_to_sn_stat_r_doas_full[ite][0],
+                rx_relative_AoAs_v = self.pn_term_to_sn_stat_r_doas_full[ite][1],
+                tx_relative_AoAs_h = self.sn_stat_to_pn_term_r_doas_full[ite][0],
+                tx_relative_AoAs_v = self.sn_stat_to_pn_term_r_doas_full[ite][1],
+                N_h_rx = pn_panel_N_h, N_v_rx = pn_panel_N_v,
+                N_h_tx = sn_array_N_h, N_v_tx = sn_array_N_v,
+                rng = rng
+            )
+            pn_term_sn_stat_H_full[ite] = pn_term_sn_stat_H
+
+
+            # 3. Generate the channel coefficients for the links between PN stations and SN stations
+
+            pn_stat_sn_stat_H = self.pn_conf.methods["channel_model"].generate_multiple_channels(
+                gain_Coefficients = self.pn_stat_sn_stat_ls_gain_full[ite],
+                K_Coefficients = self.pn_stat_sn_stat_K_full[ite][:, :, np.newaxis, np.newaxis],
+                rx_R_Matrixes = self.pn_stat_to_sn_stat_R_matrices_full[ite],
+                tx_R_Matrixes = self.sn_stat_to_pn_stat_R_matrices_full[ite],
+                rx_relative_AoAs_h = self.pn_stat_to_sn_stat_r_doas_full[ite][0],
+                rx_relative_AoAs_v = self.pn_stat_to_sn_stat_r_doas_full[ite][1],
+                tx_relative_AoAs_h = self.sn_stat_to_pn_stat_r_doas_full[ite][0],
+                tx_relative_AoAs_v = self.sn_stat_to_pn_stat_r_doas_full[ite][1],
+                N_h_rx = pn_array_N_h, N_v_rx = pn_array_N_v,
+                N_h_tx = sn_array_N_h, N_v_tx = sn_array_N_v,
+                rng = rng
             )
 
-            pn_term_sn_stat_H_coeffs_full[ite] = pn_term_sn_stat_H_coeffs
+            pn_stat_sn_stat_H_full[ite] = pn_stat_sn_stat_H
 
-            # ___________________________________________
-            # Links between PN stations and SN stations
-            # ___________________________________________  
 
-            pn_stat_sn_stat_H_coeffs = self.pn_conf.methods["channel_model"].generate_multiple_channels(
-                self.pn_stat_sn_stat_lsg_coeffs_full[ite], self.pn_stat_sn_stat_K_coeffs_full[ite][:, :, np.newaxis, np.newaxis],
-                self.pn_stat_sn_stat_R_matrices_full[ite], self.sn_stat_pn_stat_R_matrices_full[ite],
-                *self.pn_stat_sn_stat_r_doas_full[ite], *self.sn_stat_pn_stat_r_doas_full[ite],
-                pn_array_N_h, pn_array_N_v,
-                sn_array_N_h, sn_array_N_v,
-                rng
-            )
 
-            pn_stat_sn_stat_H_coeffs_full[ite] = pn_stat_sn_stat_H_coeffs
-
-        self.pn_term_sn_term_H_coeffs_full = pn_term_sn_term_H_coeffs_full
-
-        self.pn_term_sn_stat_H_coeffs_full = pn_term_sn_stat_H_coeffs_full
-
-        self.pn_stat_sn_stat_H_coeffs_full = pn_stat_sn_stat_H_coeffs_full
+        self.pn_term_sn_term_H_full = pn_term_sn_term_H_full
+        self.pn_term_sn_stat_H_full = pn_term_sn_stat_H_full
+        self.pn_stat_sn_stat_H_full = pn_stat_sn_stat_H_full
 
         path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/InterNetwork/H_coeffs/'
 
-        np.savez(path + 'pn_term_sn_term_H_coeffs_full.npz', pn_term_sn_term_H_coeffs = self.pn_term_sn_term_H_coeffs_full)
-        np.savez(path + 'pn_term_sn_stat_H_coeffs_full.npz', pn_term_sn_stat_H_coeffs = self.pn_term_sn_stat_H_coeffs_full)
-        np.savez(path + 'pn_stat_sn_stat_H_coeffs_full.npz', pn_stat_sn_stat_H_coeffs = self.pn_stat_sn_stat_H_coeffs_full)
+        np.savez(path + 'pn_term_sn_term_H_full.npz', pn_term_sn_term_H = self.pn_term_sn_term_H_full)
+        np.savez(path + 'pn_term_sn_stat_H_full.npz', pn_term_sn_stat_H = self.pn_term_sn_stat_H_full)
+        np.savez(path + 'pn_stat_sn_stat_H_full.npz', pn_stat_sn_stat_H = self.pn_stat_sn_stat_H_full)
 
 
 

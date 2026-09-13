@@ -12,6 +12,7 @@ class PanelSelectionContext:
     inter_network_gains: np.ndarray
     intra_network_gains: np.ndarray
     inter_network_channel: np.ndarray
+    intra_network_channel: np.ndarray
     num_terminals: int
     num_panels: int
     rng: np.random.Generator
@@ -19,11 +20,13 @@ class PanelSelectionContext:
 
 @dataclass 
 class TerminalSchedulingContext:
+    inter_network_lsf: np.ndarray
     inter_network_lsg: np.ndarray
     inter_network_channel: np.ndarray
     terminal_panels: np.ndarray
     scheduling_threshold: float
     terminal_max_power: float
+    terminal_max_antenna_gain: float
     pn_noise_variance: float
 
 @dataclass
@@ -62,33 +65,51 @@ class SchedulingManager:
         self._station_scheduling_threshold = threshold
  
     def select_terminal_panels(self, 
-        inter_network_gains, intra_network_gains, inter_network_channel,
+        inter_network_gains, intra_network_gains, inter_network_channel, intra_network_channel,
         num_terminals, rng) -> np.ndarray:
 
         context = PanelSelectionContext(
             inter_network_gains = inter_network_gains,
             intra_network_gains = intra_network_gains,
             inter_network_channel = inter_network_channel,
+            intra_network_channel = intra_network_channel,
             num_terminals = num_terminals,
             num_panels  = self._config.num_panels,
             rng = rng
         )
         return self._panel_selection_technique.perform(context)
+
  
     def schedule_terminals(self, 
-        inter_network_lsg, inter_network_channel, terminal_panels, 
-        terminal_max_power, pn_noise_variance) -> np.ndarray:
+        inter_network_lsf,                   
+        inter_network_lsg, 
+        inter_network_channel, 
+
+        terminal_panels, 
+
+        terminal_max_power, 
+        terminal_max_antenna_gain,
+        pn_noise_variance) -> np.ndarray:
+
         
         context = TerminalSchedulingContext(
+            inter_network_lsf = inter_network_lsf,
             inter_network_lsg = inter_network_lsg,
             inter_network_channel = inter_network_channel,
+
             terminal_panels = terminal_panels,
             scheduling_threshold = self._terminal_scheduling_threshold,
+
             terminal_max_power = terminal_max_power,
+            terminal_max_antenna_gain = ,
+
             pn_noise_variance = pn_noise_variance
         )
+
+        a = self._terminal_scheduling_technique.perform_as_second_step(context)
         
         return self._terminal_scheduling_technique.perform(context)
+
 
     def schedule_stations(self,
         inter_network_lsg, inter_network_channel, 
@@ -112,9 +133,13 @@ class SchedulingManager:
 @dataclass
 class CrossChannels:
 
-    pn_term_sn_term_lsg: np.ndarray
-    pn_term_sn_stat_lsg: np.ndarray
-    pn_stat_sn_stat_lsg: np.ndarray
+    pn_term_sn_term_lsf: np.ndarray
+    pn_term_sn_stat_lsf: np.ndarray
+    pn_stat_sn_stat_lsf: np.ndarray
+
+    pn_term_sn_term_gain: np.ndarray
+    pn_term_sn_stat_gain: np.ndarray
+    pn_stat_sn_stat_gain: np.ndarray
 
     pn_term_sn_term_K: np.ndarray
     pn_term_sn_stat_K: np.ndarray
@@ -179,17 +204,20 @@ class ScenarioReader:
         self._scheduling.set_panel_selection_technique(path, class_name)
 
     
-    def compute_uplink_kpis(self, ite: int):
+    def compute_uplink_kpis_for_panel_selection_and_scheduling(self, ite: int):
 
         # When the SN is in uplink -> UEs scheduling
 
-        # 1. 
+        # 1. UEs panel selection
         selected_panels = self._scheduling.select_terminal_panels(
             inter_network_gains = self.cross_channels.pn_term_sn_term_lsg[ite],
-            intra_network_gains = self.sn_geometry.H_coeffs[ite],
+            intra_network_gains = self.sn_geometry.lsg_coeffs[ite],
             inter_network_channel = self.cross_channels.pn_term_sn_term_H[ite],
+            intra_network_channel = self.sn_geometry.H_coeffs[ite],
             num_terminals = self.sn_config.num_terminals,
             rng = self.rng)
+
+
 
         scheduled_terminals = self._scheduling.schedule_terminals(
             inter_network_lsg = self.cross_channels.pn_term_sn_term_lsg[ite],
@@ -200,35 +228,9 @@ class ScenarioReader:
         )
 
 
+
+
         from source.utils import lin2db, db2lin
-
-        # Mean of the Ricean factor in linear scale
-        K_mu_linear = db2lin(self.sn_config.methods["lsf_model"].K_mu)
-
-        # print("Fatores K")
-        # print(self.cross_channels.pn_term_sn_term_K[ite][0])
-
-        strong_los_ues = np.where(self.cross_channels.pn_term_sn_term_K[ite][0] > 0.0)[0]
-        weak_los_ues = np.where(self.cross_channels.pn_term_sn_term_K[ite][0] == 0)[0]
-       
-        # print("Weak LOS UEs")
-        # print(weak_los_ues)
-
-        # print("Strong LOS UEs")
-        # print(strong_los_ues)
-
-        # UEs that were scheduled in the shared band and have strong LOS towards the FS
-        scheduled_strong_los_ues = np.intersect1d(strong_los_ues, scheduled_terminals)
-
-        # UEs that were scheduled in the shared band and have weak LOS towards the FS
-        scheduled_weak_los_ues = np.intersect1d(weak_los_ues, scheduled_terminals)
-
-        # print("Scheduled UEs")
-        # print(scheduled_terminals)
-
-        # print("Weak LOS UEs: ")
-        # print(scheduled_weak_los_ues)
-
 
         # SN performing channel estimation considering all UEs
         H_est, C_error = self.sn_config.methods["channel_estimation"].compute(
@@ -247,40 +249,51 @@ class ScenarioReader:
         pn_combining = np.ones((self.pn_config.num_terminals, 1))
 
 
-        # Computing the INR caused by the strong LOS UEs
-        sn_ul_caused_inr_by_strong_los_ues = self._kpi_calculator.compute_sn_uplink_caused_inr(
-            self.cross_channels.pn_term_sn_term_H[ite], scheduled_strong_los_ues, selected_panels,  pn_combining, 
-            self.sn_config.terminal_max_power
-        )
 
-        # Computing the INR caused by the weak LOS UEs
-        sn_ul_caused_inr_by_weak_los_ues = self._kpi_calculator.compute_sn_uplink_caused_inr(
-            self.cross_channels.pn_term_sn_term_H[ite], scheduled_weak_los_ues, selected_panels,  pn_combining, 
-            self.sn_config.terminal_max_power
-        )
-
+        # Computing the SEs and INR level
         sn_ul_spec_effs, sn_ul_caused_inr_by_all_ues = self._kpi_calculator.compute_uplink_kpis(
             self.sn_geometry.H_coeffs[ite], self.cross_channels.pn_term_sn_term_H[ite], self.cross_channels.pn_stat_sn_stat_H[ite],
             clustering_matrix, scheduled_terminals, selected_panels, sn_combiners, pn_combining, 
             self.sn_config.terminal_max_power, self.pn_config.station_max_power, self.rng
                     )
 
-
-        sn_ul_caused_inr_by_strong_los_ues = lin2db(sn_ul_caused_inr_by_strong_los_ues[0])
-        sn_ul_caused_inr_by_weak_los_ues   = lin2db(sn_ul_caused_inr_by_weak_los_ues[0])
         sn_ul_caused_inr_by_all_ues        = lin2db(sn_ul_caused_inr_by_all_ues[0])
 
 
 
 
         return (
-            sn_ul_caused_inr_by_strong_los_ues, 
-            sn_ul_caused_inr_by_weak_los_ues,
-            sn_ul_caused_inr_by_weak_los_ues, 
+            sn_ul_caused_inr_by_all_ues, 
             len(scheduled_terminals), 
             np.sum(sn_ul_spec_effs) 
 
             )
+
+
+    def compute_uplink_kpis_for_scheduling_first(self, ite: int):
+
+        """
+        
+        Consider that the UEs scheduling is performed before the panel selection
+
+        """
+
+
+        scheduled_ues = self._scheduling.schedule_terminals(
+            inter_network_lsf = self.cross_channels.,                   
+            inter_network_lsg, 
+            inter_network_channel, 
+                    
+                            terminal_panels, 
+                    
+                            terminal_max_power, 
+                            terminal_max_antenna_gain,
+                            pn_noise_variance
+        )
+
+
+
+
 
     def compute_downlink_kpis(self, ite: int):
 

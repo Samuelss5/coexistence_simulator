@@ -1,12 +1,71 @@
 import numpy as np
 
+from source.utils import *
+
 from source.geometry.coordinates import calculate_2d_distances
 
 
 class IndividualEstimated_INR:
     
-    # @classmethod
-    # def perform(cls, Gains, term_sel_panels_vec, max_ul_power, noise_variance):
+    @classmethod
+    def perform_as_second_step(cls, context):
+
+        """
+        This class method performs UE scheduling considering that it is a second step after UE panel selecion.
+
+        This class method performs UE scheduling by estimating the interference that each UE causes to the fixed service (FS) based on large-scale parameters.
+
+        The main parameter used to schedule a UE is the interference-to-noise (INR) level that it causes to the FS.
+
+        """
+
+        # 1. UEs maximum transmission power
+        ue_max_power = context.terminal_max_power
+
+        # 2. Matrix containing the large-scale gains of the links between UEs and the FS
+        ls_gains = context.inter_network_lsg
+
+        # 3. Vector containing the indexes of the panels selected by each UE
+        ue_sel_panels = context.terminal_panels
+
+        # 4. Fixed service noise variance
+        fs_n_var = context.pn_noise_variance
+
+
+        # Number of UEs
+        K = len(ue_sel_panels)
+
+        # OBS: the antenna gains are already included in the large-scale  
+        # OBS: the FS is equipped with a single panel or array 
+        est_inrs = ue_max_power * ls_gains[:, np.arange(K), :, ue_sel_panels]
+
+        est_inrs = est_inrs / fs_n_var
+
+        est_inrs = lin2db(est_inrs[:,0])
+
+        scheduled_ues = np.where(est_inrs <= context.scheduling_threshold)[0]
+
+        return scheduled_ues
+
+
+    def perform_as_first_step(cls, context):
+
+        """
+        This class method performs UE scheduling considering that it is the first step before UE panel selecion.
+
+        Even though the panel selection has not been made yet, it is necessary that each UE selects one of its panels.
+        """
+
+        # 1-st option:
+        # - Compute the large-scale gains considering that all UEs have maximum gain towards the FS
+        # For this to be possible it is necessary that context contains the large-scale fading gains and the maximum UE antenna gain
+
+
+
+
+
+
+
 
 
     @classmethod

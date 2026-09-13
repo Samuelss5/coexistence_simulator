@@ -82,8 +82,8 @@ def main():
     panel_selection_path = 'source/scheduling/panel_selection.py'
 
     # UEs panel selection methods
-    DMimo_panel_selection_techniques = ['TpsAltruisticFromLsfGain', 'TpsRandomic']
-
+    #DMimo_panel_selection_techniques = ['TpsAltruisticFromLsfGain', 'TpsRandomic']
+    DMimo_panel_selection_techniques = ['TpsSelfishFromChannelGain']
     
     
     uplink_strong_LOS_INR_results = {}
@@ -125,10 +125,9 @@ def main():
 
                     print(key)
 
-                    ul_caused_inr_strong, ul_caused_inr_weak, ul_caused_inr, ul_num_UEs, ul_sum_se = sce_reader.compute_uplink_kpis(ite)
-
-                    uplink_strong_LOS_INR_results[key].append(ul_caused_inr_strong)
-                    uplink_weak_LOS_INR_results[key].append(ul_caused_inr_weak)
+                    (ul_caused_inr, 
+                     ul_num_UEs, 
+                     ul_sum_se ) = sce_reader.compute_uplink_kpis_for_panel_selection_and_scheduling(ite)
 
                     uplink_INR_results[key].append(ul_caused_inr)
                     uplink_num_UEs_results[key].append(ul_num_UEs)

@@ -153,8 +153,8 @@ Dmimo_network:
   terminal_scheduling_method_class: 'IndividualEstimated_INR'
 
 
-  num_terminals: 15
-  num_stations: 16
+  num_terminals: 1
+  num_stations: 4
 
   num_panels: 4
   num_arrays: 3
@@ -165,8 +165,8 @@ Dmimo_network:
   panel_N_h: 1
   panel_N_v: 1
 
-  array_N_h: 4
-  array_N_v: 2
+  array_N_h: 1
+  array_N_v: 1
 
   terminals_max_power: 0.1
   stations_max_power: 0.1
@@ -187,6 +187,6 @@ Dmimo_network:
   num_pilot_sequences: 10
 
 
-num_snapshots: 200
+num_snapshots: 2
 
 
