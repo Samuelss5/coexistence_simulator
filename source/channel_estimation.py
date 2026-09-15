@@ -3,7 +3,7 @@ import numpy as np
 class Centralized_MMSE_estimation:
 
     @classmethod
-    def compute(cls, channel_Coefficients, R_matrixes, panels_idxs, scheduled_ues_vec,
+    def compute(cls, H_coeffs, R_matrices, sel_panels, scheduled_ues,
                     tau_p: int, ul_max_power: float, noise_var: float):
 
         
@@ -12,7 +12,7 @@ class Centralized_MMSE_estimation:
         # S = number of access points (APs)
         # _ = number of panels/arrays per UE
         # A = number of panels/arrays per AP
-        K, S, _, A, Nt, Ns = channel_Coefficients.shape
+        K, S, _, A, Nt, Ns = H_coeffs.shape
 
 
         # Nt = number of antennas at each UE panel/array
@@ -24,27 +24,38 @@ class Centralized_MMSE_estimation:
         L = S * A
         LNs = L * Ns
 
-        H_dense = np.array(channel_Coefficients.tolist())
+        H_dense = np.array(H_coeffs.tolist())
 
-        # The matrix dimension is (K,S,A,Nt,Ns)
-        H_sel = H_dense[np.arange(K), :, panels_idxs, ...]
+        # What to do when scheduled_ues = [] ?
 
-        # The matrix dimension must be (S,A,K,Ns,Nt)
-        H_trans = H_sel.transpose(1,2,0,4,3)
+        n_sched = len(scheduled_ues)
 
-        H_ul = H_trans.reshape(L, K, Ns, Nt)
+        # Pre-compute all concatenated channels
+        H_ul = np.zeros((L, K, Ns, Nt), dtype=np.complex128)
 
+        Rs_dense = np.array(R_matrices.tolist())
 
-        Rs_dense = np.array(R_matrixes.tolist())
+        R_ul = np.zeros((L, K, Ns, Ns), dtype=np.complex128)
 
-        # (K, L, A, Ns, Ns)
-        Rs_sel = Rs_dense[:, np.arange(K), :, panels_idxs].swapaxes(0,1)
+        print("R_dense: ", Rs_dense.shape)
 
-        Rs_trans = Rs_sel.swapaxes(1,2)
+        for k in range(len(scheduled_ues)):
+            ue_k_idx = scheduled_ues[k]
+            sp_k     = sel_panels[k]    
 
-        Rs_ul = Rs_trans.reshape(L, K, Ns,Ns)
+            # Current shape -> (S, A, Nt, Ns)
+            H_k = H_coeffs[ue_k_idx, :, sp_k, :]
 
+            H_k = H_k.transpose(0, 1, 3, 2)
+            H_k = H_k.reshape(L, Ns, Nt)
 
+            print("H_k: ", H_k.shape)
+
+            H_ul[:, ue_k_idx, ...] = H_k
+
+            R_ul[:, ue_k_idx, ...] = Rs_dense[:, ue_k_idx, :, sp_k].reshape(L, Ns, Ns)
+
+        print("R_ul: ", R_ul.shape)
 
 
         # OBS: It is important to note that we consider that each UE terminal is equipped with a single antenna
@@ -52,30 +63,16 @@ class Centralized_MMSE_estimation:
         # Power allocation -> the non scheduled UEs will have their powers set to zero, while the scheduled ones will transmit with max power
 
         transmit_powers_vec = np.zeros(K, dtype=float)
-        transmit_powers_vec[scheduled_ues_vec] = ul_max_power
-
-
-        # Pre-compute all concatenated channels
-        H_concatenated = np.zeros((K, LNs, Nt), dtype=np.complex128)
-
-        for ue_j in range(K):
-            if transmit_powers_vec[ue_j] > 10**-6:  # Only compute for UEs with non-negligible power
-
-                H_concatenated[ue_j] = np.concatenate(
-                    H_ul[:, ue_j, :, :], axis=0
-                )
-            else:
-                pass
-
+        transmit_powers_vec[scheduled_ues] = ul_max_power
 
 
         # Identify
         pilot_allocation_vec = np.full(K, None, dtype = object)
 
-        num_scheduled = len(scheduled_ues_vec)
+        num_scheduled = len(scheduled_ues)
 
         if num_scheduled > 0:
-            pilot_allocation_vec[scheduled_ues_vec] = np.arange(num_scheduled) % tau_p
+            pilot_allocation_vec[scheduled_ues] = np.arange(num_scheduled) % tau_p
 
 
 
@@ -98,11 +95,11 @@ class Centralized_MMSE_estimation:
 
                 Y_l += Noise_l * np.sqrt(0.5) * noise_var
                 
-                Psi_matrix = np.sum(Rs_ul[l, pilot_p_ues_vec], axis = 0) * tau_p * ul_max_power + np.eye(Ns) * noise_var
+                Psi_matrix = np.sum(R_ul[l, pilot_p_ues_vec], axis = 0) * tau_p * ul_max_power + np.eye(Ns) * noise_var
 
                 for k in pilot_p_ues_vec:
 
-                    R_kl = Rs_ul[l, k]
+                    R_kl = R_ul[l, k]
 
                     R_kl_Psi = R_kl * np.linalg.inv(Psi_matrix)
 

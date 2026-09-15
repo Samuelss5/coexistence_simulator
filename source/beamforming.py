@@ -5,7 +5,10 @@ from scipy.linalg import block_diag, solve
 
 class DMimoCentralizedMmseCombining:
 
-    def compute(H_est_ul, scheduled_ues_vec, C_matrixes, Clustering_matrix, ul_max_power, noise_var):
+    @classmethod
+    def compute(cls, 
+                H_hat_coeffs: np.ndarray, C_error_matrices: np.ndarray, clustering_matrix: np.ndarray, 
+                scheduled_ues: np.ndarray, ul_max_power: float, noise_var: float):
 
         # OBS: We consider that all scheduled UEs transmit with max power
 
@@ -13,22 +16,22 @@ class DMimoCentralizedMmseCombining:
         # K = number of user equipments (UEs)
         # Ns = number of antennas at each AP panel/array
         # Nt = number of antennas at each UE panel/array
-        L, K, Ns, Nt = H_est_ul.shape
+        L, K, Ns, Nt = H_hat_coeffs.shape
 
         LNs = L * Ns
 
         # Power allocation
         transmit_powers_vec = np.zeros(K, dtype=float)
-        transmit_powers_vec[scheduled_ues_vec] = ul_max_power
+        transmit_powers_vec[scheduled_ues] = ul_max_power
         
         D_matrixes = np.zeros((K, LNs, LNs), dtype = np.complex128)
 
         for ue_k in range(K):
             D_k = []
             for ap_l in range(L):
-                if Clustering_matrix[ue_k, ap_l] == 0:
+                if clustering_matrix[ue_k, ap_l] == 0:
                     D_k.append(np.eye(Ns) * 0)
-                elif Clustering_matrix[ue_k, ap_l] == 1:
+                elif clustering_matrix[ue_k, ap_l] == 1:
                     D_k.append(np.eye(Ns))
 
             D_k = block_diag(*D_k)
@@ -41,7 +44,7 @@ class DMimoCentralizedMmseCombining:
             if transmit_powers_vec[ue_j] > 10**-6:  # Only compute for UEs with non-negligible power
 
                 H_concatenated[ue_j] = np.concatenate(
-                    H_est_ul[:, ue_j, :, :], axis=0
+                    H_hat_coeffs[:, ue_j, :, :], axis=0
                 )
             else:
                 pass
@@ -51,7 +54,7 @@ class DMimoCentralizedMmseCombining:
 
         for ue_k in range(K):
             if transmit_powers_vec[ue_k] > 10e-6:
-                C_list = [C_matrixes[ue_k, ap_l] for sp_l in range(L)]
+                C_list = [C_error_matrices[ue_k, ap_l] for sp_l in range(L)]
                 C_block[ue_k] = block_diag(*C_list)
 
 

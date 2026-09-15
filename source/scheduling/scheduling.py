@@ -20,16 +20,16 @@ class IndividualEstimated_INR:
         """
 
         # 1. UEs maximum transmission power
-        ue_max_power = context.terminal_max_power
+        ue_max_p = context.term_max_p
 
         # 2. Matrix containing the large-scale gains of the links between UEs and the FS
-        ls_gains = context.inter_network_lsg
+        ls_gain_coeffs = context.inter_net_ls_gain
 
         # 3. Vector containing the indexes of the panels selected by each UE
-        ue_sel_panels = context.terminal_panels
+        ue_sel_panels = context.term_sel_panels
 
         # 4. Fixed service noise variance
-        fs_n_var = context.pn_noise_variance
+        fs_n_var = context.n_var
 
 
         # Number of UEs
@@ -37,18 +37,16 @@ class IndividualEstimated_INR:
 
         # OBS: the antenna gains are already included in the large-scale  
         # OBS: the FS is equipped with a single panel or array 
-        est_inrs = ue_max_power * ls_gains[:, np.arange(K), :, ue_sel_panels]
+        inrs_hat = ue_max_p * ls_gain_coeffs[:, np.arange(K), :, ue_sel_panels] / fs_n_var
+        inrs_hat = lin2db(inrs_hat[:,0])
 
-        est_inrs = est_inrs / fs_n_var
-
-        est_inrs = lin2db(est_inrs[:,0])
-
-        scheduled_ues = np.where(est_inrs <= context.scheduling_threshold)[0]
+        scheduled_ues = np.where(inrs_hat <= context.threshold)[0]
 
         return scheduled_ues
 
 
-    def perform_as_first_step(cls, context):
+    @classmethod
+    def max_antenna_gain_as_first_step(cls, context):
 
         """
         This class method performs UE scheduling considering that it is the first step before UE panel selecion.
@@ -60,10 +58,57 @@ class IndividualEstimated_INR:
         # - Compute the large-scale gains considering that all UEs have maximum gain towards the FS
         # For this to be possible it is necessary that context contains the large-scale fading gains and the maximum UE antenna gain
 
+        ue_max_p = context.term_max_p
+        ue_max_gain = db2lin( context.term_max_ant_gain )
 
+        fs_n_var = context.n_var
 
+        ls_fading_coeffs = context.inter_net_ls_fading
 
+        ls_gain_coeffs = ls_fading_coeffs * ue_max_gain
 
+        # Individual INRs estimated from the large scale parameters
+        inrs_hat = ue_max_p * ls_gain_coeffs / fs_n_var
+        inrs_hat = lin2db(inrs_hat)
+
+        # Selecting the UEs through an individual manner
+        scheduled_ues = np.where(inrs_hat[0] <= context.threshold)[0]
+
+        return scheduled_ues
+
+    @classmethod
+    def min_antenna_gain_as_first_step(cls, context):
+
+        """
+        This class method performs UE scheduling considering that it is the first step before UE panel selecion.
+        
+        We consider that the imaginary selected panel has minimum gain towards the PN.
+        """
+
+        # max tx power
+        ue_max_p = context.term_max_p
+
+        # min antenna gain
+        ue_min_gain = db2lin( context.term_min_ant_gain )
+
+        fs_n_var = context.n_var
+
+        ls_fading_coeffs = context.inter_net_ls_fading
+
+        print("Shape: ", ls_fading_coeffs.shape)
+
+        ls_gain_coeffs = ls_fading_coeffs * ue_min_gain
+
+        # Individual INRs estimated from the large scale parameters
+        inrs_hat = ue_max_p * ls_gain_coeffs / fs_n_var
+        inrs_hat = lin2db(inrs_hat)
+
+        print("Estimated INRs: ", inrs_hat)
+
+        # Selecting the UEs through an individual manner
+        scheduled_ues = np.where(inrs_hat[0] <= context.threshold)[0]
+
+        return scheduled_ues
 
 
 

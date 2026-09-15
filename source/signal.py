@@ -118,37 +118,50 @@ class DMimoUplinkTargetSignal:
         channel_tensor,
         clustering_matrix,
         scheduled_ues,
-        selected_ue_panels,
+        ues_panels,
         combining_vectors,
         max_ul_power
     ):
-    
+
+
+
     
         h_dense = np.array(channel_tensor.tolist())
 
         # Dimensions according to the mathematic notation
-        K, S, P, A, Nu, Ns = h_dense.shape
-        L = S * A
+        num_ues, num_aps, num_pan, num_arr, N_pan, N_arr = h_dense.shape
+        num_aps_arr = num_aps * num_arr
 
-        # 
-        h_sel = h_dense[np.arange(K), :, selected_ue_panels, ...]
-        h_trans = h_sel.transpose(1,2,0,4,3)
-        h_ul = h_trans.reshape(L, K, Ns, Nu)
+        # Uplink channel tensor
+        H_ul = np.zeros((num_aps_arr, num_ues, N_arr, N_pan), dtype=np.complex128)
 
-        target_signals = np.zeros(K, dtype=float)
+        for ue_k in scheduled_ues:
+            sp_k = ues_panels[ue_k]
+
+            # shape -> (num_aps, num_arr, N_pan, N_arr)
+            H_k = h_dense[ue_k, :, sp_k]
+            H_k = H_k.transpose(0, 1, 3, 2)
+            H_k = H_k.reshape(num_aps_arr, N_arr, N_pan)
+
+            H_ul[:, ue_k] = H_k
+
+        print("H_ul: ", H_ul.shape)        
+
+        target_signals = np.zeros(num_ues, dtype=float)
 
         for ue_k in scheduled_ues:
 
             h_k = np.concatenate(
-                    h_ul[:, ue_k], axis = 0
+                    H_ul[:, ue_k], axis = 0
                 )
 
+
             d_k = []
-            for ap_l in range(L):
+            for ap_l in range(num_aps_arr):
                 if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(Ns))
+                    d_k.append(np.eye(N_arr))
                 else:
-                    d_k.append(np.zeros((Ns,Ns)))
+                    d_k.append(np.zeros((N_arr,N_arr)))
             
             d_k = block_diag(*d_k)
             v_k = combining_vectors[ue_k]
@@ -269,52 +282,55 @@ class DMimoDownlinkTargetSignal:
         return target_signals
 
 
-        
 
 
-class DMimoIntraUplinkInterference:
+    
+            
 
+class DMimoIntraInterference:
 
     @classmethod
-    def compute(
+    def uplink_intra_interference(
         cls,
         channel_tensor,
         clustering_matrix,
         scheduled_ues,
-        selected_ue_panels,
+        ues_panels,
         combining_vectors,
         max_ul_power
         ):
 
         h_dense = np.array(channel_tensor.tolist())
-
+        
         # Dimensions according to the mathematic notation
-        K, S, P, A, Nu, Ns = h_dense.shape
-        L = S * A
+        num_ues, num_aps, num_pan, num_arr, N_pan, N_arr = h_dense.shape
+        num_aps_arr = num_aps * num_arr
 
-        # 
-        h_sel = h_dense[np.arange(K), :, selected_ue_panels, ...]
-        h_trans = h_sel.transpose(1,2,0,4,3)
-        h_ul = h_trans.reshape(L, K, Ns, Nu)
+        # Uplink channel tensor
+        h_ul = np.zeros((num_aps_arr, num_ues, N_arr, N_pan), dtype=np.complex128)
 
-        interference_signals = np.zeros(K, dtype=float)
-
-        h_conc = np.zeros((K, L*Ns, Nu), dtype=np.complex128)
-
-        # Pre concatenating channels
         for ue_k in scheduled_ues:
-            h_conc[ue_k] = np.concatenate(
-                h_ul[:, ue_k], axis = 0
-            )
-    
+            sp_k = ues_panels[ue_k]
+
+            # shape -> (num_aps, num_arr, N_pan, N_arr)
+            h_k = h_dense[ue_k, :, sp_k]
+            h_k = h_k.transpose(0, 1, 3, 2)
+            h_k = h_k.reshape(num_aps_arr, N_arr, N_pan)
+
+            h_ul[:, ue_k] = h_k
+        
+
+        # vector that will store the desired signals power
+        interference_signals = np.zeros(num_ues, dtype=float)
+
         for ue_k in scheduled_ues:
 
             d_k = []
-            for ap_l in range(L):
+            for ap_l in range(num_aps_arr):
                 if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(Ns))
+                    d_k.append(np.eye(N_arr))
                 else:
-                    d_k.append(np.zeros((Ns,Ns)))
+                    d_k.append(np.zeros((N_arr, N_arr)))
             
             d_k = block_diag(*d_k)
 
@@ -325,7 +341,9 @@ class DMimoIntraUplinkInterference:
             for ue_j in scheduled_ues:
                 if ue_j != ue_k:
 
-                    h_j = h_conc[ue_j]
+                    h_j = np.concatenate(
+                        h_ul[:, ue_k], axis = 0
+                    )
 
                     intf_k += np.sqrt(max_ul_power) * (v_k.T.conj() @ d_k @ h_j)
 
@@ -333,10 +351,18 @@ class DMimoIntraUplinkInterference:
                 interference_signals[ue_k] = 0.0
             else:
                 interference_signals[ue_k] = np.linalg.norm(intf_k)**2
-
+    
         return interference_signals
-            
 
+
+    @classmethod
+    def downlink_intra_interference(
+        cls,
+
+    ):
+        ...
+
+        
 
 class DMimoIntraDownlinkInterference:
 
@@ -451,6 +477,78 @@ class DMimoDownlinkToDownlinkInterference:
         return interference_signals
 
 
+### INTER NETWORK INTERFERENCE CLASSES
+
+class InterfCausedBySecondaryToPrimaryNetwork:
+
+    @classmethod
+    def uplink_to_downlink_interference(cls, H_tensor):
+
+        # OBS: Assuming that the PN terminals are the receivers
+        ....
+
+
+class Interf
+
+
+class InterfCausedByDMimo:
+
+    @classmethod
+    def uplink_interference(cls, 
+        H_tensor, 
+        sn_sched_term,
+        sn_sel_panels,
+        sn_ul_precoders,
+        pn_dl_combiners,
+        sn_max_ul_p
+            ):
+
+        """
+        The SN is in uplink: terminals [Tx] -> stations [Rx]
+        The PN is in downlink: stations [Tx] -> terminals [Tx]
+
+        InterNet interference: SN terminals [TX] -> PN terminals [Rx]
+        """
+
+        # OBS: "pan" is the abbreviation for panel 
+
+        H = np.array(H_tensor.tolist())
+
+        num_pn_term, num_sn_term, num_pn_pan, num_sn_pan = H.shape
+
+        pn_interference_received_from_sn_dl = np.zeros(num_pn_term, dtype=np.float64)
+
+        for pn_term_j in range(num_pn_term):
+
+            interf_j = 0.0
+
+            v_j = pn_dl_combiners[pn_term_j]
+
+            for sn_term_k in sn_sched_term:
+                sp_k = sn_sel_panels[sn_term_k]
+                h = H[pn_term_j, sn_term_k, 0, sp_k]
+
+                w_k = sn_ul_precoders[sn_term_k]
+
+                interf_j += ( v_j.T.conj() @ h @ w_k ) * np.sqrt(sn_max_ul_p)
+        
+    
+        
+            if np.isscalar(interf_j) or np.ndim(interf_j) == 0:
+                pn_interference_received_from_sn_dl[pn_term_j] = 0.0
+            else:
+                pn_interference_received_from_sn_dl[pn_term_j] = np.linalg.norm(interf_j)**2
+
+        return pn_interference_received_from_sn_dl
+        
+        
+
+
+
+    @classmethod
+    def downlink_interference(cls, ):
+
+
 
 
 class FsDownlinkToDMimoDownlinkInterference:
@@ -510,9 +608,12 @@ class UplinkToDownlinkInterference:
         max_ul_power
         ):
 
+        # Formalizar uma notação
+
         h_dense = np.array(channel_tensor.tolist())
 
         R, T, A, P, Nr, Nt = h_dense.shape
+
 
         # result: (T, I, A, Nr, Nt)
         h_sel = h_dense[:, np.arange(T), :, selected_terminal_panels, ...]

@@ -10,8 +10,15 @@ import os
 
 mp.set_start_method('fork')
 
+from pathlib import Path
+
+dir_path = str(Path(__file__).resolve().parent.parent)
+
 class RunFixedServiceSnapshots:
 
+
+    
+            
     def __init__(self, config):
         self.config = config
 
@@ -349,8 +356,10 @@ class RunDMimoSnapshots:
             )
 
             H_coeffs_full[ite] = H_coeffs
+
+
         
-        basic_path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/DMimo/'
+        basic_path = dir_path + '/scenarios_storage/DMimo/'
         
 
         # np.savez('aps_coords.npz', aps_coords = aps_coords_for_all_snapshots)
@@ -754,7 +763,7 @@ class InterNetworkLinksBuilder:
         self.pn_stat_sn_stat_K_full         = pn_stat_sn_stat_K_full
 
 
-        path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/InterNetwork/lsg_parameters/'
+        path = dir_path + '/scenarios_storage/InterNetwork/lsg_parameters/'
 
         np.savez(path + 'pn_term_sn_term_ls_fading_full.npz', pn_term_sn_term_ls_fading = self.pn_term_sn_term_ls_fading_full)
         np.savez(path + 'pn_term_sn_term_ls_gain_full.npz',   pn_term_sn_term_ls_gain   = self.pn_term_sn_term_ls_gain_full)
@@ -861,7 +870,7 @@ class InterNetworkLinksBuilder:
         self.pn_stat_to_sn_stat_R_matrices_full = pn_stat_to_sn_stat_R_matrices_full
         self.sn_stat_to_pn_stat_R_matrices_full = sn_stat_to_pn_stat_R_matrices_full
 
-        path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/InterNetwork/R_matrices/'
+        path = dir_path + '/scenarios_storage/InterNetwork/R_matrices/'
 
         np.savez(path + 'pn_term_sn_term_R_matrices_full', pn_term_sn_term_R_matrices = self.pn_term_to_sn_term_R_matrices_full)
         np.savez(path + 'sn_term_pn_term_R_matrices_full', sn_term_pn_term_R_matrices = self.sn_term_to_pn_term_R_matrices_full)
@@ -978,7 +987,7 @@ class InterNetworkLinksBuilder:
         self.pn_term_sn_stat_H_full = pn_term_sn_stat_H_full
         self.pn_stat_sn_stat_H_full = pn_stat_sn_stat_H_full
 
-        path = '/home/samuelserejosilva/Projetos/sim_scenario/scenarios_storage/InterNetwork/H_coeffs/'
+        path = dir_path + '/scenarios_storage/InterNetwork/H_coeffs/'
 
         np.savez(path + 'pn_term_sn_term_H_full.npz', pn_term_sn_term_H = self.pn_term_sn_term_H_full)
         np.savez(path + 'pn_term_sn_stat_H_full.npz', pn_term_sn_stat_H = self.pn_term_sn_stat_H_full)

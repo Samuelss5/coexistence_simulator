@@ -3,3 +3,4 @@ scenarios_storage/DMimo/H_coeffs/H_coeffs_full.npz filter=lfs diff=lfs merge=lfs
 scenarios_storage/DMimo/lsg_parameters/K_coeffs_full.npz filter=lfs diff=lfs merge=lfs -text
 scenarios_storage/DMimo/lsg_parameters/lsg_coeffs_full.npz filter=lfs diff=lfs merge=lfs -text
 scenarios_storage/** filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text

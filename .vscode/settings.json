@@ -19,5 +19,6 @@
         "savez",
         "sectorization",
         "sinrs"
-    ]
+    ],
+    "chat.disableAIFeatures": false
 }

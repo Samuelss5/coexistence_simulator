@@ -153,8 +153,8 @@ Dmimo_network:
   terminal_scheduling_method_class: 'IndividualEstimated_INR'
 
 
-  num_terminals: 1
-  num_stations: 4
+  num_terminals: 4
+  num_stations: 16
 
   num_panels: 4
   num_arrays: 3

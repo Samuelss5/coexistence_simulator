@@ -4,33 +4,71 @@ from source.ScenarioReader import PanelSelectionContext
 
 class TpsAltruisticFromLsfGain:
     
-    # This function is hardcoded considering that the receiver is equipped with a single panel
+    @classmethod
+    def perform_as_first_step(cls, context) -> np.ndarray:
+
+        """
+        This method consider that the panel selection
+        """
+
+        # Large scale gain coefficientes between the UEs and the FS rx
+        ls_gain_coeffs = context.inter_net_ls_gain
+        
+        sel_panels = np.empty(context.num_term, dtype=int)
+    
+        for k in range(context.num_term):
+
+            # Vector containing the ls gains between the k-th UE panels and the FS rx
+            g_k = ls_gain_coeffs[:,k, ...]
+
+            sp_k = np.argmin(g_k)
+
+            sel_panels[k] = sp_k            
+            
+        return sel_panels
 
     @classmethod
-    def perform(cls, context: PanelSelectionContext) -> np.ndarray:
+    def perform_as_second_step(cls, context):
 
-        gains_matrix = context.inter_network_gains
+        """
+        This method consider that the panel selection
+        """
 
-        selected_panels = np.zeros(context.num_terminals, dtype=int)
-    
-        for term in range(context.num_terminals):
+        # OBS: Consider that UEs scheduled has already been performed
 
-            g_k = gains_matrix[:,term, ...]
+        # Vector containing the indexes of the scheduled UEs
+        scheduled_ues = context.scheduled_term
 
-            s_p = np.argmin(g_k)
+        # Large scale gain coefficientes between the UEs and the FS rx
+        ls_gain_coeffs = context.inter_net_ls_gain
 
-            selected_panels[term] = s_p            
-            
+        sel_panels = np.empty(context.num_term, dtype=int)
 
-        return selected_panels
+        for k in scheduled_ues:
+
+            # Vector containing the ls gains between the k-th UE panels and the FS rx
+            g_k = ls_gain_coeffs[:, k, ...]
+            print("g_k: ",g_k)
+            sp_k = np.argmin(g_k)
+
+            sel_panels[k] = sp_k
+
+        return sel_panels
+
+
+
+
+
 
 
 class TpsAltruisticFromChannelGain:
-    
-    # This function is hardcoded considering that the receiver is equipped with a single panel
 
     @classmethod
-    def perform(cls, context: PanelSelectionContext) -> np.ndarray:
+    def perform(cls, context) -> np.ndarray:
+
+        """
+        This method consider that the panel selection
+        """
 
         channel_matrix = context.inter_network_channel
 
@@ -47,24 +85,37 @@ class TpsAltruisticFromChannelGain:
 
             h_k_norm = np.linalg.norm(h_k, axis = (1,2))**2
 
-            #print("h norm: ", h_k_norm)
-
-            #g_k = gains_matrix[:,term, ...]
-
             s_p = np.argmin(h_k_norm)
-
-            #print("s_p: ", s_p)
 
             selected_panels[term] = s_p            
             
 
         return selected_panels
 
+    # @classmethod
+    # def perform_second_step(cls, context):
+
+    #     """
+    #     Consider that the panel selection is 
+        
+    #     """
+
+    #     scheduled_ues = context. 
+
+
+
 
 class TpsSelfishFromChannelGain:
 
+
+    # OBS: Since this panel selection method requires the estimated channel coefficients, it 
+
     @classmethod
-    def perform(cls, context: PanelSelectionContext):
+    def perform_as_first_step(cls, context):
+
+        """
+        This method consider that the panel selection
+        """
 
         H_matrix = context.intra_network_channel
 
@@ -90,27 +141,44 @@ class TpsSelfishFromChannelGain:
 
             selected_panels[term] = np.argmax(H_k_norm)
 
-
-
-            #G_k = G_matrix[term,].transpose(1,0,2)
-            #G_k = G_k.reshape(num_panels, num_stations * num_arrays)
-
-            #g_k = np.mean(G_k, axis=1)
-
-            #selected_panels[term] = np.argmax(g_k)
-
         return selected_panels
+
+    @classmethod
+    def perform_as_second_step(cls, context):
+        """
+        This method consider that the panel selection
+        """
+        ...
+        # # Estimated channel coefficients
+        # H_hat_coeffs = 
+
+        # num_term, num_stat, num_panels, num_arrays, N_p, N_a = H_hat_coeffs.shape
+
+
+
             
 class TpsRandomic:
 
     @classmethod
-    def perform(cls, context: PanelSelectionContext) -> np.ndarray:
+    def perform_as_first_step(cls, context: PanelSelectionContext) -> np.ndarray:
 
-        selected_panels = context.rng.integers(0, context.num_panels, size=context.num_terminals)
+        sel_panels = context.rng.integers(0, context.num_panels, size=context.num_term)
 
-        #print("Selected_panels: ", selected_panels)
+        return sel_panels
 
-        return selected_panels
+    @classmethod
+    def perform_as_second_step(cls, context):
+
+        # Vector containing the indexes of the scheduled UEs
+        scheduled_ues = context.scheduled_term
+
+        # Vector that will store the indexes of the selected panels
+        sel_panels = np.empty(context.num_term, dtype=int)
+
+        for k in scheduled_ues:
+            sel_panels[k] = context.rng.integers(0, context.num_panels)
+
+        return sel_panels
 
 class NoSelection:
 

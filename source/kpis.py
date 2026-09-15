@@ -2,23 +2,28 @@ import numpy as np
 
 class SignalProcessor:
  
-    def __init__(self, config: NetworkConfig):
+    def __init__(self, config):
         self._num_terminals = config.num_terminals
         self._num_stations  = config.num_stations
         self._num_arrays    = config.num_arrays
         self._combining = config.methods["stations_combining"]
         self._beamforming = config.methods["stations_beamforming"]
  
-    def compute_uplink_combiners(self, estimated_channel, scheduled_terminals,
-                                  channel_error, clustering,
-                                  max_power, noise_variance) -> np.ndarray:
+    def compute_uplink_combiners(self, 
+                                 H_hat_coeffs, C_error_hat, D_clustering,
+                                 scheduled_term,
+                                 ul_max_p, n_var) -> np.ndarray:
 
         # When the DMimo network is in uplink there is no need to cluster the network
 
-        return self._combining.compute(
-            estimated_channel, scheduled_terminals, channel_error,
-            clustering, max_power, noise_variance,
+        ul_combiners = self._combining.compute(
+            H_hat_coeffs, C_error_hat, D_clustering,
+            scheduled_term,
+            ul_max_p, n_var
         )
+
+        return ul_combiners
+        
  
     def compute_downlink_precoders(self, estimated_channel, scheduled_terminals,
                                     channel_error, clustering_matrix,

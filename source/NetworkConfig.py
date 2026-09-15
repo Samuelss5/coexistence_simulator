@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from source.utils import dbm2lin
 
+import numpy as np
+
 @dataclass
 class NetworkConfig:
 

@@ -8,7 +8,7 @@ class MethodLoader:
     """
  
     @staticmethod
-    def load(module_path: str, class_name: str) -> Any:
+    def load(module_path: str, class_name: str):
         spec = importlib.util.spec_from_file_location("modulo_dinamico", module_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
