@@ -37,8 +37,6 @@ class Centralized_MMSE_estimation:
 
         R_ul = np.zeros((L, K, Ns, Ns), dtype=np.complex128)
 
-        print("R_dense: ", Rs_dense.shape)
-
         for k in range(len(scheduled_ues)):
             ue_k_idx = scheduled_ues[k]
             sp_k     = sel_panels[k]    
@@ -49,13 +47,10 @@ class Centralized_MMSE_estimation:
             H_k = H_k.transpose(0, 1, 3, 2)
             H_k = H_k.reshape(L, Ns, Nt)
 
-            print("H_k: ", H_k.shape)
-
             H_ul[:, ue_k_idx, ...] = H_k
 
             R_ul[:, ue_k_idx, ...] = Rs_dense[:, ue_k_idx, :, sp_k].reshape(L, Ns, Ns)
 
-        print("R_ul: ", R_ul.shape)
 
 
         # OBS: It is important to note that we consider that each UE terminal is equipped with a single antenna

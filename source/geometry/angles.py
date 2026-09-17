@@ -128,5 +128,8 @@ def compute_multiple_relative_doas_for_queue(queue, rx_coords, tx_coords, rx_h_b
                     rx_r_doas_h[rx, tx, rx_p, :] = horizontal_angular_distance(rx_doa_h, h_bsights[rx, rx_p])
                     rx_r_doas_v[rx, tx, rx_p, :] = vertical_angular_distance(  rx_doa_v, v_bsights[rx, rx_p])
 
+
+
     tuple = (rx_r_doas_h, rx_r_doas_v)
     queue.put(tuple)
+

@@ -14,6 +14,26 @@ from pathlib import Path
 
 dir_path = str(Path(__file__).resolve().parent.parent)
 
+
+
+
+
+
+def empty_object_array(n):
+    return np.empty(n, dtype=np.ndarray)
+
+def group_slice_bounds(i, num_groups, division, total):
+    """Bounds of the i-th chunk when splitting `total` items into `num_groups` groups."""
+    idx_b = i * division
+    idx_e = (i + 1) * division if i < num_groups - 1 else total
+    return idx_b, idx_e
+
+
+def save_npz(path, filename, **arrays):
+    np.savez(path + filename, **arrays)
+
+
+
 class RunFixedServiceSnapshots:
 
 
@@ -82,12 +102,20 @@ class RunFixedServiceSnapshots:
 
         )
             
-    
+
+
+# from dataclasses import dataclass
+
+# @dataclass
+# class ParalelismContext:
+
+
 
 class RunDMimoSnapshots:
 
     def __init__(self, config):
         self.config = config
+
 
     def _start(self, func, arguments):
             queue = mp.Queue()
@@ -95,6 +123,468 @@ class RunDMimoSnapshots:
             process = mp.Process(target=func, args=args)
             process.start()
             return process, queue
+
+   
+        
+    
+    def generate_coordinates(self, num_snapshots: int, rng: np.random.Generator):
+
+        """
+        This function generates the coordinates of the UEs and APs for a given number of snapshots. 
+        
+        The APs positions are equal for every single snapshot, while the UEs positions are generated randomly for each snapshot.
+        
+        """
+
+        print("DMimo: generating coordinates")
+
+        # OBS: remember that for the network configuration the UEs are "terminals" and the APs are "stations"
+
+        # Coordinates storage for all snapshots
+        ues_coords_for_all_snapshots     = np.empty(num_snapshots, dtype=np.ndarray)
+        aps_coords_for_all_snapshots     = np.empty(num_snapshots, dtype=np.ndarray)
+
+
+        # 1. The APs are fixed
+        aps_fixed_coords = self.config.methods["station_deployment"].deploy(
+            self.config.station_height, self.config.num_stations, rng
+        )
+
+        for ite in range(num_snapshots):
+        
+            aps_coords_for_all_snapshots[ite] = aps_fixed_coords
+        
+            # 1. Generating UEs coordinates
+            ues_coords = self.config.methods["terminal_deployment"].deploy(
+                aps_fixed_coords, self.config.terminal_height, self.config.num_terminals, rng
+            )
+            ues_coords_for_all_snapshots[ite] = ues_coords
+
+        return (ues_coords_for_all_snapshots, aps_coords_for_all_snapshots)
+
+
+    def define_boresights_of_panels_and_arrays(self, num_snapshots: int, rng: object):
+
+        print("DMimo: defining boresights")
+
+        ues_boresights_for_all_snapshots = np.empty(num_snapshots, dtype=np.ndarray)
+        aps_boresights_for_all_snapshots = np.empty(num_snapshots, dtype=np.ndarray)
+        
+
+        for ite in range(num_snapshots):
+            # 1. Generating UEs panels boresights
+            ues_boresights = self.config.methods["terminal_sectorization"].compute(
+                self.config.num_terminals, self.config.num_panels, rng
+            )
+            ues_boresights_for_all_snapshots[ite] = ues_boresights
+
+            # 1. Generating APs panels boresights
+            aps_boresights = self.config.methods["station_sectorization"].compute(
+                self.config.num_stations, self.config.num_arrays, self.config.station_downtilt
+            )
+            aps_boresights_for_all_snapshots[ite] = aps_boresights
+
+
+        return (ues_boresights_for_all_snapshots, aps_boresights_for_all_snapshots)
+
+
+
+    def compute_relative_directions_of_arrival(self, 
+                     ues_coords_for_all_snapshots, aps_coords_for_all_snapshots, 
+                     ues_boresights_for_all_snapshots, aps_boresights_for_all_snapshots,
+                     num_snapshots: int):
+
+        print("DMimo: computing relative directions of arrival")
+
+        # Storage of the DoAs from the UEs POV 
+        ues_r_doas_for_all_snapshots = np.zeros(num_snapshots, dtype=tuple)
+
+        # Storage of the DoAs from the APs POV
+        aps_r_doas_for_all_snapshots = np.zeros(num_snapshots, dtype=tuple)
+
+        tensor_shape = (
+            self.config.num_terminals, 
+            self.config.num_stations, 
+            self.config.num_panels, 
+            self.config.num_arrays
+        )
+
+
+        for ite in range(num_snapshots):
+
+            # Total number of CPU cores
+            num_cores = os.cpu_count()
+            # Number of available cores (excluding the main one and one for the OS)
+            num_aps_groups = num_cores - 2
+            aps_division = self.config.num_stations // num_aps_groups
+            
+            
+            # Storage of the DoAs from the UEs POV 
+            ues_r_h_doas = np.zeros(tensor_shape, dtype=float)
+            ues_r_v_doas = np.zeros(tensor_shape, dtype=float)
+    
+            # Storage of the DoAs from the APs POV
+            aps_r_h_doas = np.zeros(tensor_shape, dtype=float)
+            aps_r_h_doas = aps_r_h_doas.transpose(1, 0, 3, 2)
+            aps_r_v_doas = np.zeros(tensor_shape, dtype=float)
+            aps_r_v_doas = aps_r_v_doas.transpose(1, 0, 3, 2)
+            
+            processes = []
+            queues    = []
+
+            # Computing the DoAs from the POV of the UEs
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                args = (
+                    ues_coords_for_all_snapshots[ite], 
+                    aps_coords_for_all_snapshots[ite][idx_b:idx_e], 
+                    *ues_boresights_for_all_snapshots[ite], 
+                    self.config.num_panels, 
+                    self.config.num_arrays
+                    )
+
+                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
+
+                processes.append(P)
+                queues.append(Q)
+
+
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                (
+                ues_r_h_doas[:, idx_b:idx_e], 
+                ues_r_v_doas[:, idx_b:idx_e]) = queues[i].get()
+
+
+            for P in processes:
+                P.join()
+
+            ues_r_doas_for_all_snapshots[ite] = (ues_r_h_doas, ues_r_v_doas)
+
+
+            # Computing the DoAs from the POV of the APs
+            processes = []
+            queues    = []
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                args = (
+                    aps_coords_for_all_snapshots[ite][idx_b:idx_e], 
+                    ues_coords_for_all_snapshots[ite], 
+                    *aps_boresights_for_all_snapshots[ite], 
+                    self.config.num_arrays, 
+                    self.config.num_panels
+                    )
+        
+                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
+                
+                processes.append(P)
+                queues.append(Q)
+    
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                h_doas, v_doas = queues[i].get()
+                
+                aps_r_h_doas[idx_b:idx_e] = h_doas
+                aps_r_v_doas[idx_b:idx_e] = v_doas
+
+            for P in processes:
+                P.join()
+
+            aps_r_doas_for_all_snapshots[ite] = (aps_r_h_doas, aps_r_v_doas)
+                
+
+        return (ues_r_doas_for_all_snapshots, aps_r_doas_for_all_snapshots)
+        
+        
+
+    def compute_antennas_gains(self, 
+                        ues_r_doas_for_all_snapshots, 
+                        aps_r_doas_for_all_snapshots,
+                        num_snapshots: int
+                        ):
+
+        print("DMimo: computing antennas gains")
+
+        # Total number of CPU cores
+        num_cores = os.cpu_count()
+        # Number of available cores (excluding the main one and one for the OS)
+        num_aps_groups = num_cores - 2
+        aps_division = self.config.num_stations // num_aps_groups
+                    
+        
+        # Storage of the antennas gains from the UEs POV 
+        ues_gains_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        # Storage of the antennas gains from the APs POV
+        aps_gains_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        tensor_shape = (
+            self.config.num_terminals, 
+            self.config.num_stations, 
+            self.config.num_panels, 
+            self.config.num_arrays
+        )
+
+        print("tensor shape: ", tensor_shape)
+
+        for ite in range(num_snapshots):
+
+            ues_gains = np.zeros(tensor_shape, dtype=float)
+
+            aps_gains = np.zeros(tensor_shape, dtype=float)
+            aps_gains = aps_gains.transpose(1, 0, 3, 2)
+                                
+            processes = []
+            queues    = []
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                args = (
+                    ues_r_doas_for_all_snapshots[ite][0][:, idx_b:idx_e], 
+                    ues_r_doas_for_all_snapshots[ite][1][:, idx_b:idx_e]
+                    )
+
+                P, Q = self._start(self.config.methods["terminal_antenna_gain"].compute_for_queue, args)
+                processes.append(P)
+                queues.append(Q)
+        
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                ues_gains[:, idx_b:idx_e] = queues[i].get()
+
+            for P in processes:
+                P.join()
+
+
+            ues_gains_for_all_snapshots[ite] = ues_gains
+            
+            processes = []
+            queues    = []
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                args = (
+                    aps_r_doas_for_all_snapshots[ite][0][idx_b:idx_e], 
+                    aps_r_doas_for_all_snapshots[ite][1][idx_b:idx_e]
+                    )
+                
+                P, Q = self._start(self.config.methods["station_antenna_gain"].compute_for_queue, args)
+                processes.append(P)
+                queues.append(Q)
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+                aps_gains[idx_b:idx_e] = queues[i].get()
+
+            for P in processes:
+                P.join()
+
+            aps_gains_for_all_snapshots[ite] = aps_gains
+
+        return (
+            ues_gains_for_all_snapshots,
+            aps_gains_for_all_snapshots
+        )
+
+    def compute_spatial_correlation_matrices(self, 
+                                             ues_r_doas_for_all_snapshots: np.ndarray,
+                                             aps_r_doas_for_all_snapshots: np.ndarray,
+                                             num_snapshots: int):
+
+        print("DMimo: computing spatial correlation matrices")
+
+        # Total number of CPU cores
+        num_cores = os.cpu_count()
+        # Number of available cores (excluding the main one and one for the OS)
+        num_aps_groups = num_cores - 2
+        aps_division = self.config.num_stations // num_aps_groups
+                            
+        # Storage of the antennas gains from the UEs POV 
+        ues_R_matrices_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        # Storage of the antennas gains from the APs POV
+        aps_R_matrices_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        tensor_shape = (
+            self.config.num_terminals, 
+            self.config.num_stations, 
+            self.config.num_panels, 
+            self.config.num_arrays
+        )
+
+        pan_N_h = self.config.panel_N_h
+        pan_N_v = self.config.panel_N_v
+        pan_N_tot = pan_N_h * pan_N_v
+
+        arr_N_h = self.config.array_N_h
+        arr_N_v = self.config.array_N_v
+        arr_N_tot = arr_N_h * arr_N_v
+
+        
+        for ite in range(num_snapshots):
+
+            ues_R_matrices = np.zeros((*tensor_shape, pan_N_tot, pan_N_tot), dtype=np.complex128)
+
+            aps_R_matrices = np.zeros((*tensor_shape, arr_N_tot, arr_N_tot), dtype=np.complex128)
+            aps_R_matrices = aps_R_matrices.transpose(1, 0, 3, 2, 4, 5)
+                                
+            processes = []
+            queues    = []
+
+
+            # Computing the correlation matrices from the POV of the UEs
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                args = (
+                    ues_r_doas_for_all_snapshots[ite][0][:, idx_b:idx_e], 
+                    ues_r_doas_for_all_snapshots[ite][1][:, idx_b:idx_e],
+                    pan_N_h, pan_N_v
+                    )
+
+                P, Q = self._start(self.config.methods["correlation_model"].compute_fast_integrals_for_queue, args)
+                processes.append(P)
+                queues.append(Q)
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+                ues_R_matrices[:, idx_b:idx_e] = queues[i].get()
+
+            for P in processes:
+                P.join()
+
+            ues_R_matrices_for_all_snapshots[ite] = ues_R_matrices
+
+
+            processes = []
+            queues    = []
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+
+                args = (
+                    aps_r_doas_for_all_snapshots[ite][0][idx_b:idx_e], 
+                    aps_r_doas_for_all_snapshots[ite][1][idx_b:idx_e],
+                    arr_N_h, arr_N_v
+                    )
+
+                P, Q = self._start(self.config.methods["correlation_model"].compute_fast_integrals_for_queue, args)
+                processes.append(P)
+                queues.append(Q)
+
+            for i in range(num_aps_groups):
+                idx_b = i * aps_division
+                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else self.config.num_stations
+                aps_R_matrices[idx_b:idx_e] = queues[i].get()
+
+            for P in processes:
+                P.join()
+
+            aps_R_matrices_for_all_snapshots[ite] = aps_R_matrices
+        
+
+        return (
+            ues_R_matrices_for_all_snapshots, 
+            aps_R_matrices_for_all_snapshots
+        )
+
+
+    def compute_large_scale_fading_coefficients(self, 
+                                                ues_coords_for_all_snapshots, 
+                                                aps_coords_for_all_snapshots, 
+                                                num_snapshots: int,
+                                                rng: object):
+
+        print("DMimo: computing large scale fading coefficients")
+
+        ls_fading_coeffs_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+        K_coeffs_for_all_snapshots   = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        for ite in range(num_snapshots):
+
+            ls_fading_coeffs, K_coeffs = self.config.methods["lsf_model"].compute(
+                ues_coords_for_all_snapshots[ite], aps_coords_for_all_snapshots[ite], 
+                self.config.terminal_height, self.config.station_height, 
+                self.config.carrier_frequency, rng, None
+            )
+
+            ls_fading_coeffs_for_all_snapshots[ite] = ls_fading_coeffs
+            K_coeffs_for_all_snapshots[ite]   = K_coeffs
+
+        return (
+            ls_fading_coeffs_for_all_snapshots, 
+            K_coeffs_for_all_snapshots
+            )
+
+    def compute_large_scale_gain_coefficients(self,
+                                              ls_fading_coeffs_for_all_snapshots,
+                                              ues_gains_for_all_snapshots,
+                                              aps_gains_for_all_snapshots,
+                                              num_snapshots: int):
+
+        print("DMimo: computing large scale gain coefficients")
+
+        ls_gain_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        for ite in range(num_snapshots):
+
+            ls_gain_coeffs = (
+                ls_fading_coeffs_for_all_snapshots[ite][..., :, None, None] *  
+                ues_gains_for_all_snapshots[ite] *
+                aps_gains_for_all_snapshots[ite].transpose(1,0,3,2)
+                )
+
+            ls_gain_for_all_snapshots[ite] = ls_gain_coeffs
+
+        return ls_gain_for_all_snapshots
+
+
+    def generate_channel_coefficients(self, 
+                                      ls_gain_coeffs, K_coeffs, 
+                                      rx_R_matrices, tx_R_matrices, 
+                                      rx_aoas, tx_aoas, 
+                                      rx_N, tx_N, 
+                                      num_snapshots: int,
+                                      rng):
+
+        print("DMimo: generating channel coefficients")
+
+        H_coeffs_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
+
+        for ite in range(num_snapshots):
+
+            H_coeffs = self.config.methods["channel_model"].generate_multiple_channels(
+                ls_gain_coeffs[ite], K_coeffs[ite], 
+                rx_R_matrices[ite], tx_R_matrices[ite], 
+                rx_aoas[ite], tx_aoas[ite], 
+                rx_N, tx_N, 
+                rng
+            )
+
+            H_coeffs_for_all_snapshots[ite] = H_coeffs
+
+        return H_coeffs_for_all_snapshots
+        
+
 
     def run(self, num_snapshots: int, rng: np.random.Generator):
 
@@ -112,278 +602,100 @@ class RunDMimoSnapshots:
         array_N_v = self.config.array_N_v
         
 
-        # The APs positions are equal for every single snapshot
-        aps_coords = self.config.methods["station_deployment"].deploy(
-            ap_height, num_aps, rng
+
+        # 1. Generating the coordinates for all snapshots
+        (
+        ues_coords_for_all_snapshots, 
+        aps_coords_for_all_snapshots) = self.generate_coordinates(num_snapshots, rng)
+
+        # 2. Defining the boresights of the panels and arrays for all snapshots
+        (
+        ues_boresights_for_all_snapshots,
+        aps_boresights_for_all_snapshots) = self.define_boresights_of_panels_and_arrays(num_snapshots, rng)
+
+        # 3. Computing the relative directions of arrival for all snapshots
+        (
+        ues_r_doas_for_all_snapshots,
+        aps_r_doas_for_all_snapshots) = self.compute_relative_directions_of_arrival(
+            ues_coords_for_all_snapshots, aps_coords_for_all_snapshots,
+            ues_boresights_for_all_snapshots, aps_boresights_for_all_snapshots,
+            num_snapshots
         )
 
-
-        # Tuple
-        aps_boresights = self.config.methods["station_sectorization"].compute(
-            num_aps, num_arrays, self.config.station_downtilt
+        # 4. Computing the antenna gains for all snapshots
+        (
+        ues_gains_for_all_snapshots,
+        aps_gains_for_all_snapshots) = self.compute_antennas_gains(
+            ues_r_doas_for_all_snapshots, aps_r_doas_for_all_snapshots,
+            num_snapshots
         )
 
-    
-        ues_coords_full     = np.empty(num_snapshots, dtype=np.ndarray)
-        aps_coords_full     = np.empty(num_snapshots, dtype=np.ndarray)
-
-        ues_boresights_full = np.empty(num_snapshots, dtype=np.ndarray)
-        aps_boresights_full = np.empty(num_snapshots, dtype=np.ndarray)
-
-        lsf_coeffs_full     = np.empty(num_snapshots, dtype=np.ndarray)
-        lsg_coeffs_full     = np.empty(num_snapshots, dtype=np.ndarray)
-
-        K_coeffs_full       = np.empty(num_snapshots, dtype=np.ndarray)
-
-        ues_R_matrices_full = np.empty(num_snapshots, dtype=np.ndarray)
-        aps_R_matrices_full = np.empty(num_snapshots, dtype=np.ndarray)
-
-        H_coeffs_full = np.empty(num_snapshots, dtype=np.ndarray)
-
-        for ite in range(num_snapshots):
-
-            print('DMimo snapshot ' + str(ite))
-
-            aps_coords_full[ite]     = aps_coords
-            aps_boresights_full[ite] = aps_boresights
-
-            # 1. Generating UEs coordinates
-            ues_coords = self.config.methods["terminal_deployment"].deploy(
-                aps_coords, ue_height, num_ues, rng
-            )
-
-            ues_coords_full[ite] = ues_coords
-
-            # 2. Generating UEs panels boresights
-            ues_boresights = self.config.methods["terminal_sectorization"].compute(
-                num_ues, num_panels, rng
-            )
-
-            ues_boresights_full[ite] = ues_boresights
-
-
-            
-            num_cores = os.cpu_count()
-            num_aps_groups = num_cores - 2
-            aps_division = num_aps // num_aps_groups
-
-
-            # ______________________________________
-            #   Relative AoAs from UEs point of view
-            # ______________________________________
-
-            ues_r_doas_h = np.zeros((num_ues, num_aps, num_panels, num_arrays), dtype=float)
-            ues_r_doas_v = np.zeros((num_ues, num_aps, num_panels, num_arrays), dtype=float)
-            
-            processes = []
-            queues    = []
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                args = (ues_coords, aps_coords[idx_b:idx_e], *ues_boresights, num_panels, num_arrays)
-
-                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
-
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                ues_r_doas_h[:, idx_b:idx_e], ues_r_doas_v[:, idx_b:idx_e] = queues[i].get()
-
-            for P in processes:
-                P.join()
-
-            # ______________________________________
-            #   Relative AoAs from APs point of view
-            # ______________________________________
-
-            aps_r_doas_h = np.zeros((num_aps, num_ues, num_arrays, num_panels), dtype=float)
-            aps_r_doas_v = np.zeros((num_aps, num_ues, num_arrays, num_panels), dtype=float)
-                        
-            processes = []
-            queues    = []
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                args = (aps_coords[idx_b:idx_e], ues_coords, *aps_boresights, num_arrays, num_panels)
-
-                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
-                
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                aps_r_doas_h[idx_b:idx_e], aps_r_doas_v[idx_b:idx_e] = queues[i].get()
-
-            for P in processes:
-                P.join()
-            
-
-
-            ues_gains = np.zeros((num_ues, num_aps, num_panels, num_arrays), dtype=float)
-                        
-            processes = []
-            queues    = []
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                args = (ues_r_doas_h[:, idx_b:idx_e], ues_r_doas_v[:, idx_b:idx_e])
-
-                P, Q = self._start(self.config.methods["terminal_antenna_gain"].compute_for_queue, args)
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                ues_gains[:, idx_b:idx_e] = queues[i].get()
-
-            for P in processes:
-                P.join()
-            
-
-            aps_gains = np.zeros((num_aps, num_ues, num_arrays, num_panels), dtype=float)
-            processes = []
-            queues    = []
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                args = (aps_r_doas_h[idx_b:idx_e], aps_r_doas_v[idx_b:idx_e])
-
-                P, Q = self._start(self.config.methods["station_antenna_gain"].compute_for_queue, args)
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-                aps_gains[idx_b:idx_e] = queues[i].get()
-
-            for P in processes:
-                P.join()
-
-
-            
-            lsf_coeffs = np.zeros((num_ues, num_aps), dtype=float)
-            K_coeffs   = np.zeros((num_ues, num_aps), dtype=float)
-            processes = []
-            queues    = []
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                args = (ues_coords, aps_coords[idx_b:idx_e], ue_height, ap_height, self.config.carrier_frequency, rng, None)
-
-                P, Q = self._start(self.config.methods["lsf_model"].compute_for_queued, args)
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-                lsf_coeffs[:, idx_b:idx_e], K_coeffs[:, idx_b:idx_e] = queues[i].get()
-
-            for P in processes:
-                P.join()
-
-
-            # Large scale fading coefficients
-            # lsf_coeffs, K_coeffs = self.config.methods["lsf_model"].compute(ues_coords, aps_coords, ue_height, ap_height, self.config.carrier_frequency, rng, None)
-            # lsf_coeffs_full[i] = lsf_coeffs
-            
-
-            # Large scale gain coefficients (Certified that it works as it should)
-            lsg_coeffs = lsf_coeffs[:, :, np.newaxis, np.newaxis] * ues_gains * aps_gains.transpose(1,0,3,2)
-            lsg_coeffs_full[ite] = lsg_coeffs
-        
-            # Spatial correlation matrixes
-            ues_R_matrices = self.config.methods["correlation_model"].compute_fast_integrals(
-                ues_r_doas_h, ues_r_doas_v, panel_N_h, panel_N_v
-                )
-
-
-            aps_R_matrices = np.empty((num_aps, num_ues, num_arrays, num_panels), dtype=np.ndarray)
-            processes = []
-            queues    = []
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-
-                args = (aps_r_doas_h[idx_b:idx_e, ...], aps_r_doas_v[idx_b:idx_e, ...], array_N_h, array_N_v)
-                P, Q = self._start(self.config.methods["correlation_model"].compute_fast_integrals_for_queue, args)
-
-                processes.append(P)
-                queues.append(Q)
-
-    
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_aps
-                aps_R_matrices[idx_b:idx_e] = queues[i].get()
-            
-    
-            for P in processes:
-                P.join()
-
-    
-            ues_R_matrices_full[ite] = ues_R_matrices
-            aps_R_matrices_full[ite] = aps_R_matrices
-
-
-            H_coeffs = self.config.methods["channel_model"].generate_multiple_channels(
-                lsg_coeffs, K_coeffs[:, :, np.newaxis, np.newaxis],
-                ues_R_matrices, aps_R_matrices,
-                ues_r_doas_h, ues_r_doas_v, 
-                aps_r_doas_h, aps_r_doas_v,
-                panel_N_h, panel_N_v,
-                array_N_h, array_N_v,
-                rng
-            )
-
-            H_coeffs_full[ite] = H_coeffs
-
+        # 5. Computing the spatial correlation matrices for all snapshots
+        (
+        ues_R_matrices_for_all_snapshots,
+        aps_R_matrices_for_all_snapshots) = self.compute_spatial_correlation_matrices(
+            ues_r_doas_for_all_snapshots, aps_r_doas_for_all_snapshots,
+            num_snapshots
+        )
+
+        print(aps_R_matrices_for_all_snapshots)
+
+        # 6. Computing the large scale fading coefficients for all snapshots
+        (
+        ls_fading_coeffs_for_all_snapshots,
+        K_coeffs_for_all_snapshots) = self.compute_large_scale_fading_coefficients(
+            ues_coords_for_all_snapshots, aps_coords_for_all_snapshots,
+            num_snapshots, rng
+        )
+
+        # 7. Computing the large scale gain coefficients for all snapshots
+        ls_gain_coeffs_for_all_snapshots = self.compute_large_scale_gain_coefficients(
+            ls_fading_coeffs_for_all_snapshots,
+            ues_gains_for_all_snapshots,
+            aps_gains_for_all_snapshots,
+            num_snapshots
+        )
+
+        # 8. Generating the channel coefficients for all snapshots
+        H_coeffs_for_all_snapshots = self.generate_channel_coefficients(
+            ls_gain_coeffs_for_all_snapshots, K_coeffs_for_all_snapshots,
+            ues_R_matrices_for_all_snapshots, aps_R_matrices_for_all_snapshots,
+            ues_r_doas_for_all_snapshots, aps_r_doas_for_all_snapshots,
+            (panel_N_h, panel_N_v), (array_N_h, array_N_v),
+            num_snapshots, rng
+        )
 
         
         basic_path = dir_path + '/scenarios_storage/DMimo/'
         
 
-        # np.savez('aps_coords.npz', aps_coords = aps_coords_for_all_snapshots)
-        # np.savez('ues_coords.npz', ues_coords = ues_coords_for_all_snapshots)
+        np.savez(basic_path + 'lsg_parameters/lsg_coeffs_full.npz', lsg_coeffs = ls_gain_coeffs_for_all_snapshots)
+        np.savez(basic_path + 'lsg_parameters/K_coeffs_full.npz',   K_coeffs   = K_coeffs_for_all_snapshots)
 
-        np.savez(basic_path + 'lsg_parameters/lsg_coeffs_full.npz', lsg_coeffs = lsg_coeffs_full)
-        np.savez(basic_path + 'lsg_parameters/K_coeffs_full.npz',   K_coeffs   = K_coeffs_full)
+        np.savez(basic_path + 'R_matrices/ues_R_matrices_full.npz', ues_R_matrices = ues_R_matrices_for_all_snapshots)
+        np.savez(basic_path + 'R_matrices/aps_R_matrices_full.npz', aps_R_matrices = aps_R_matrices_for_all_snapshots)
 
-        np.savez(basic_path + 'R_matrices/ues_R_matrices_full.npz', ues_R_matrices = ues_R_matrices_full)
-        np.savez(basic_path + 'R_matrices/aps_R_matrices_full.npz', aps_R_matrices = aps_R_matrices_full)
-
-        np.savez(basic_path + 'H_coeffs/H_coeffs_full.npz', H_coeffs = H_coeffs_full)
+        np.savez(basic_path + 'H_coeffs/H_coeffs_full.npz', H_coeffs = H_coeffs_for_all_snapshots)
 
 
-        return (ues_coords_full, 
-                aps_coords_full,
+        return (ues_coords_for_all_snapshots, 
+                aps_coords_for_all_snapshots,
                 
-                ues_boresights_full, aps_boresights_full,
+                ues_boresights_for_all_snapshots, aps_boresights_for_all_snapshots,
 
-                lsg_coeffs_full,
+                ls_gain_coeffs_for_all_snapshots,
 
-                H_coeffs_full
+                H_coeffs_for_all_snapshots
                 )            
 
+
+
+
+from collections import namedtuple
+ 
+# Holds the outputs of a single link's LSF + antenna-gain computation, so callers
+# don't have to juggle 5 positional values.
+LinkLSF = namedtuple('LinkLSF', ['ls_fading', 'K', 'gain_a_to_b', 'gain_b_to_a', 'ls_gain'])
 
 
 
@@ -397,12 +709,124 @@ class InterNetworkLinksBuilder:
 
         self.num_snapshots = num_snapshots
 
+
+
     def _start(self, func, arguments):
         queue = mp.Queue()
         args = (queue, *arguments)
         process = mp.Process(target=func, args=args)
         process.start()
         return process, queue
+
+    def _parallel_relative_doas(self, coords_a, coords_b, boresights_a, boresights_b, 
+                                num_panels_a, num_panels_b, split_side):
+
+        """
+        Relative DoAs from `a` to `b`, computed in parallel by splitting the SN
+        stations (always the "AP" side of the link) across several processes.
+ 
+        split_side='b' -> the SN stations are `coords_b` (sliced on axis 1 of the result)
+        split_side='a' -> the SN stations are `coords_a` (sliced on axis 0 of the result)
+ 
+        NOTE: `boresights_a` is always passed whole (never sliced), matching the
+        original implementation's behaviour even in the split_side='a' case.
+        """
+
+
+        num_a = len(coords_a)
+        num_b = len(coords_b)
+
+        num_groups = os.cpu_count() - 2
+        num_sn_stations = self.sn_conf.num_stations
+        division = num_sn_stations // num_groups
+
+        doas_h = np.zeros((num_a, num_b, num_panels_a, num_panels_b), dtype=float)
+        doas_v = np.zeros((num_a, num_b, num_panels_a, num_panels_b), dtype=float)
+
+        processes, queues = [], []
+
+        for i in range(num_groups):
+
+            idx_b, idx_e = group_slice_bounds(i, num_groups, division, num_sn_stations)
+            if split_side == 'b':
+                args = (coords_a, coords_b[idx_b:idx_e], *boresights_a, num_panels_a, num_panels_b)
+
+            else:
+                args = (coords_a[idx_b:idx_e], coords_b, *boresights_a, num_panels_a, num_panels_b)
+
+            process, queue = self._start(compute_multiple_relative_doas_for_queue, args)
+            processes.append(process)
+            queues.append(queue)
+
+        for i in range(num_groups):
+            idx_b, idx_e = group_slice_bounds(i, num_groups, division, num_sn_stations)
+            if split_side == 'b':
+                doas_h[:, idx_b:idx_e], doas_v[:, idx_b:idx_e] = queues[i].get()
+            else:
+                doas_h[idx_b:idx_e], doas_v[idx_b:idx_e] = queues[i].get()
+ 
+        for process in processes:
+            process.join()
+ 
+        return doas_h, doas_v
+
+
+    def _doas_term_to_term(self, ite, pn_term_coords, sn_term_coords, pn_term_bsights, sn_term_bsights,
+                         num_pn_panels, num_sn_panels):
+
+        """
+        PN terminals <-> SN terminals
+        """
+
+        pn_to_sn = compute_multiple_relative_doas(
+            pn_term_coords[ite], sn_term_coords[ite], *pn_term_bsights[ite], num_pn_panels, num_sn_panels
+        )
+        sn_to_pn = compute_multiple_relative_doas(
+            sn_term_coords[ite], pn_term_coords[ite], *sn_term_bsights[ite], num_sn_panels, num_pn_panels
+        )
+        return pn_to_sn, sn_to_pn
+
+
+    def _doas_pn_term_to_sn_stat(self, ite, pn_term_coords, sn_stat_coords, pn_term_bsights, sn_stat_bsights,
+                               num_pn_panels, num_sn_arrays):
+
+        """
+        PN terminals <-> SN stations
+        """
+
+        pn_to_sn = self._parallel_relative_doas(
+            pn_term_coords[ite], sn_stat_coords[ite], pn_term_bsights[ite], sn_stat_bsights[ite], 
+            num_pn_panels, num_sn_arrays, split_side = 'b'
+        )
+
+        sn_to_pn = self._parallel_relative_doas(
+            sn_stat_coords[ite], pn_term_coords[ite], sn_stat_bsights[ite], pn_term_bsights[ite],
+            num_sn_arrays, num_pn_panels, split_side = 'a'
+        )
+
+        return pn_to_sn, sn_to_pn
+
+    def _doas_pn_stat_to_sn_stat(self, ite, pn_stat_coords, sn_stat_coords, pn_stat_bsights, sn_stat_bsights,
+                               num_pn_arrays, num_sn_arrays):
+
+        """
+        PN stations <-> SN stations
+        """
+
+        pn_to_sn = self._parallel_relative_doas(
+            pn_stat_coords[ite], sn_stat_coords[ite], pn_stat_bsights[ite], sn_stat_bsights[ite], 
+            num_pn_arrays, num_sn_arrays, split_side = 'b'
+        )
+
+        sn_to_pn = self._parallel_relative_doas(
+            sn_stat_coords[ite], pn_stat_coords[ite], sn_stat_bsights[ite], pn_stat_bsights[ite],
+            num_sn_arrays, num_pn_arrays, split_side = 'a'
+        )
+
+        return pn_to_sn, sn_to_pn
+        
+
+
 
 
     def compute_doas(self,):
@@ -434,26 +858,20 @@ class InterNetworkLinksBuilder:
       
 
 
-        # ___________________________________________
+
+        n = self.num_snapshots
+
         # Links between PN terminals and SN terminals
-        # ___________________________________________    
+        pn_term_to_sn_term_r_doas_for_all_snapshots = empty_object_array(n)
+        sn_term_to_pn_term_r_doas_for_all_snapshots = empty_object_array(n)
 
-        pn_term_to_sn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_term_to_pn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        # ___________________________________________
         # Links between PN terminals and SN stations
-        # ___________________________________________ 
+        pn_term_to_sn_stat_r_doas_for_all_snapshots = empty_object_array(n)
+        sn_stat_to_pn_term_r_doas_for_all_snapshots = empty_object_array(n)
 
-        pn_term_to_sn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_to_pn_term_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        # ___________________________________________
         # Links between PN stations and SN stations
-        # ___________________________________________ 
-
-        pn_stat_to_sn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_to_pn_stat_r_doas_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_stat_to_sn_stat_r_doas_for_all_snapshots = empty_object_array(n)
+        sn_stat_to_pn_stat_r_doas_for_all_snapshots = empty_object_array(n)
 
 
 
@@ -462,144 +880,65 @@ class InterNetworkLinksBuilder:
             print('Inter network snapshot ' + str(ite))
 
 
-            # ___________________________________________
             # Links between PN terminals and SN terminals
-            # ___________________________________________            
-
-            pn_term_to_sn_term_r_doas_full[ite] = compute_multiple_relative_doas(
-                pn_term_coords[ite], sn_term_coords[ite], *pn_term_bsights[ite], num_pn_panels, num_sn_panels
+            pn_term_to_sn_term_r_doas_for_all_snapshots[ite], sn_term_to_pn_term_r_doas_for_all_snapshots[ite] = self._doas_term_to_term(
+                ite, pn_term_coords, sn_term_coords, pn_term_bsights, sn_term_bsights, num_pn_panels, num_sn_panels
             )
 
-            sn_term_to_pn_term_r_doas_full[ite] = compute_multiple_relative_doas(
-                sn_term_coords[ite], pn_term_coords[ite], *sn_term_bsights[ite], num_sn_panels, num_pn_panels
-            )
-
-            num_cores = os.cpu_count()
-            num_aps_groups = num_cores - 2
-            aps_division = self.sn_conf.num_stations // num_aps_groups
-
-
-            # ___________________________________________
+            
             # Links between PN terminals and SN stations
-            # ___________________________________________ 
 
-            pn_term_to_sn_stat_r_doas_h = np.zeros((num_pn_term, num_sn_stat, num_pn_panels, num_sn_arrays), dtype=float)
-            pn_term_to_sn_stat_r_doas_v = np.zeros((num_pn_term, num_sn_stat, num_pn_panels, num_sn_arrays), dtype=float)
-
-            processes = []
-            queues    = []
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-
-                args = (pn_term_coords[ite], sn_stat_coords[ite][idx_b:idx_e], *pn_term_bsights[ite], num_pn_panels, num_sn_arrays)
-
-                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
-                processes.append(P)
-                queues.append(Q)
-
-        
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-
-                pn_term_to_sn_stat_r_doas_h[:, idx_b:idx_e], pn_term_to_sn_stat_r_doas_v[:, idx_b:idx_e] = queues[i].get()
+            pn_term_to_sn_stat_r_doas_for_all_snapshots[ite], sn_stat_to_pn_term_r_doas_for_all_snapshots[ite] = self._doas_pn_term_to_sn_stat(
+                ite, pn_term_coords, sn_stat_coords, pn_term_bsights, sn_stat_bsights, num_pn_panels, num_sn_arrays
+            )
 
 
-            pn_term_to_sn_stat_r_doas_full[ite] = (pn_term_to_sn_stat_r_doas_h, pn_term_to_sn_stat_r_doas_v)
-
-            for P in processes:
-                P.join()
-
-
-            sn_stat_to_pn_term_r_doas_h = np.zeros((num_sn_stat, num_pn_term, num_sn_arrays, num_pn_panels), dtype=float)
-            sn_stat_to_pn_term_r_doas_v = np.zeros((num_sn_stat, num_pn_term, num_sn_arrays, num_pn_panels), dtype=float)
-
-            processes = []
-            queues    = []
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-
-                args = (sn_stat_coords[ite][idx_b:idx_e], pn_term_coords[ite], *sn_stat_bsights[ite], num_sn_arrays, num_pn_panels)
-                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-
-                sn_stat_to_pn_term_r_doas_h[idx_b:idx_e], sn_stat_to_pn_term_r_doas_v[idx_b:idx_e] = queues[i].get()
-
-            sn_stat_to_pn_term_r_doas_full[ite] = (sn_stat_to_pn_term_r_doas_h, sn_stat_to_pn_term_r_doas_v)
-
-            for P in processes:
-                P.join()
-
-            # ___________________________________________
             # Links between PN stations and SN stations
-            # ___________________________________________ 
 
-            pn_stat_sn_stat_r_doas_h = np.zeros((num_pn_stat, num_sn_stat, num_pn_arrays, num_sn_arrays), dtype=float)
-            pn_stat_sn_stat_r_doas_v = np.zeros((num_pn_stat, num_sn_stat, num_pn_arrays, num_sn_arrays), dtype=float)
+            pn_stat_to_sn_stat_r_doas_for_all_snapshots[ite], sn_stat_to_pn_stat_r_doas_for_all_snapshots[ite] = self._doas_pn_stat_to_sn_stat(
+                ite, pn_stat_coords, sn_stat_coords, pn_stat_bsights, sn_stat_bsights, num_pn_arrays, num_sn_arrays
+            )
 
-            processes = []
-            queues = []
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-
-                args = (pn_stat_coords[ite], sn_stat_coords[ite][idx_b:idx_e], *pn_stat_bsights[ite], num_pn_arrays, num_sn_arrays)
-                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-                pn_stat_sn_stat_r_doas_h[:, idx_b:idx_e], pn_stat_sn_stat_r_doas_v[:, idx_b:idx_e] = queues[i].get()
-
-            pn_stat_to_sn_stat_r_doas_full[ite] = (pn_stat_sn_stat_r_doas_h, pn_stat_sn_stat_r_doas_v)
-
-            for P in processes:
-                P.join()
-
-
-            sn_stat_to_pn_stat_r_doas_h = np.zeros((num_sn_stat, num_pn_stat, num_sn_arrays, num_pn_arrays), dtype=float)
-            sn_stat_to_pn_stat_r_doas_v = np.zeros((num_sn_stat, num_pn_stat, num_sn_arrays, num_pn_arrays), dtype=float)
-
-            processes = []
-            queues = []
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-
-                args = (sn_stat_coords[ite][idx_b:idx_e], pn_stat_coords[ite], *sn_stat_bsights[ite], num_sn_arrays, num_pn_arrays)
-                P, Q = self._start(compute_multiple_relative_doas_for_queue, args)
-                processes.append(P)
-                queues.append(Q)
-
-            for i in range(num_aps_groups):
-                idx_b = i * aps_division
-                idx_e = (i + 1) * aps_division if i < num_aps_groups - 1 else num_sn_stat
-                sn_stat_to_pn_stat_r_doas_h[idx_b:idx_e], sn_stat_to_pn_stat_r_doas_v[idx_b:idx_e] = queues[i].get()
-
-            sn_stat_to_pn_stat_r_doas_full[ite] = (sn_stat_to_pn_stat_r_doas_h, sn_stat_to_pn_stat_r_doas_v)
+          
 
         
-        self.pn_term_to_sn_term_r_doas_full = pn_term_to_sn_term_r_doas_full
-        self.sn_term_to_pn_term_r_doas_full = sn_term_to_pn_term_r_doas_full
+        self.pn_term_to_sn_term_r_doas_for_all_snapshots = pn_term_to_sn_term_r_doas_for_all_snapshots
+        self.sn_term_to_pn_term_r_doas_for_all_snapshots = sn_term_to_pn_term_r_doas_for_all_snapshots
 
-        self.pn_term_to_sn_stat_r_doas_full = pn_term_to_sn_stat_r_doas_full
-        self.sn_stat_to_pn_term_r_doas_full = sn_stat_to_pn_term_r_doas_full
+        self.pn_term_to_sn_stat_r_doas_for_all_snapshots = pn_term_to_sn_stat_r_doas_for_all_snapshots
+        self.sn_stat_to_pn_term_r_doas_for_all_snapshots = sn_stat_to_pn_term_r_doas_for_all_snapshots
 
-        self.pn_stat_to_sn_stat_r_doas_full = pn_stat_to_sn_stat_r_doas_full
-        self.sn_stat_to_pn_stat_r_doas_full = sn_stat_to_pn_stat_r_doas_full
+        self.pn_stat_to_sn_stat_r_doas_for_all_snapshots = pn_stat_to_sn_stat_r_doas_for_all_snapshots
+        self.sn_stat_to_pn_stat_r_doas_for_all_snapshots = sn_stat_to_pn_stat_r_doas_for_all_snapshots
+
+    # ------------------------------------------------------------------ #
+    # 2. Large-scale fading + antenna gains
+    # ------------------------------------------------------------------ #
+
+    def _link_ls_fading_and_gain(self, coords_a, coords_b, height_a, height_b, fc, rng,
+                            gain_method_a, gain_method_b, r_doas_a_to_b, r_doas_b_to_a):
+
+
+        ls_fading, K = self.pn_conf.methods["lsf_model"].compute(
+            coords_a, coords_b, height_a, height_b, fc, rng, None
+        )
+
+
+        gain_a_to_b = gain_method_a.compute(*r_doas_a_to_b)
+        gain_b_to_a = gain_method_b.compute(*r_doas_b_to_a)
+
+        ls_gain = (
+            ls_fading[:, :, np.newaxis, np.newaxis] *
+            gain_a_to_b *
+            gain_b_to_a.transpose(1, 0, 3, 2)
+        )
+
+        return LinkLSF(ls_fading, K, gain_a_to_b, gain_b_to_a, ls_gain)
 
 
 
-    def compute_lsf_coeffs(self, rng):
+
+    def compute_large_scale_coeffs(self, rng):
 
         pn_term_coords = self.pn_geom.terminals_coords
         pn_stat_coords  = self.pn_geom.stations_coords
@@ -616,169 +955,155 @@ class InterNetworkLinksBuilder:
 
         fc = self.pn_conf.carrier_frequency
 
-        # ___________________________________________
+
+        # SN stations (APs) and the PN terminals/stations (FS rx/tx) are fixed,
+        # so these two links only need to be computed once, from the first
+        # snapshot's DoAs, and then reused for every snapshot below.
+        term_stat_fixed = self._link_ls_fading_and_gain(
+            pn_term_coords[0], sn_stat_coords[0], pn_term_height, sn_stat_height, fc, rng,
+            self.pn_conf.methods["terminal_antenna_gain"], self.sn_conf.methods["station_antenna_gain"],
+            self.pn_term_to_sn_stat_r_doas_for_all_snapshots[0], self.sn_stat_to_pn_term_r_doas_for_all_snapshots[0],
+        )
+
+        stat_stat_fixed = self._link_ls_fading_and_gain(
+            pn_stat_coords[0], sn_stat_coords[0], pn_stat_height, sn_stat_height, fc, rng,
+            self.pn_conf.methods["station_antenna_gain"], self.sn_conf.methods["station_antenna_gain"],
+            self.pn_stat_to_sn_stat_r_doas_for_all_snapshots[0], self.sn_stat_to_pn_stat_r_doas_for_all_snapshots[0],
+        )
+
+
+        n = self.num_snapshots
+
         # Links between PN terminals and SN terminals
-        # ___________________________________________ 
 
         ### 1. Large scale fading and Rician K-factor
-        pn_term_sn_term_ls_fading_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        pn_term_sn_term_K_full         = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        ### 2. Antenna gains
-        pn_term_to_sn_term_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_term_to_pn_term_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        ### 3. Large scale gains
-        pn_term_sn_term_ls_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+        term_term_ls_fading_for_all_snapshots = empty_object_array(n)
+        term_term_K_for_all_snapshots         = empty_object_array(n)
+        term_term_ls_gain_for_all_snapshots   = empty_object_array(n)
 
 
-    # ______________________________________________________________________________________
-    #   Links between PN terminals and SN stations
-    # ______________________________________________________________________________________ 
-
-        ### 1. Storage of Large scale fading and Rician K-factor
-        pn_term_sn_stat_ls_fading_full = np.zeros(self.num_snapshots, dtype=np.ndarray)
-        pn_term_sn_stat_K_full         = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        ### 2. Storage of Antenna gain
-        pn_term_to_sn_stat_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_to_pn_term_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        ### 3. Storage of Large scale gains
-        pn_term_sn_stat_ls_gain_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        term_stat_ls_fading_for_all_snapshots = empty_object_array(n)
+        term_stat_K_for_all_snapshots         = empty_object_array(n)
+        term_stat_ls_gain_for_all_snapshots   = empty_object_array(n)
 
 
-        ### 1. Computing of Large scale fading and Rician K-factor
-        (
-        pn_term_sn_stat_ls_fading, 
-        pn_term_sn_stat_K ) = self.pn_conf.methods["lsf_model"].compute( pn_term_coords[0], sn_stat_coords[0], pn_term_height, sn_stat_height, fc, rng, None)
+        stat_stat_ls_fading_for_all_snapshots = empty_object_array(n)
+        stat_stat_K_for_all_snapshots         = empty_object_array(n)
+        stat_stat_ls_gain_for_all_snapshots   = empty_object_array(n)
 
-        ### 2. Computing of Antenna gain
-        pn_term_to_sn_stat_gain = self.pn_conf.methods["terminal_antenna_gain"].compute(*self.pn_term_to_sn_stat_r_doas_full[0])
-        sn_stat_to_pn_term_gain = self.sn_conf.methods["station_antenna_gain"].compute( *self.sn_stat_to_pn_term_r_doas_full[0])
 
-        ### 3. Computing of Large scale gains
-        pn_term_sn_stat_ls_gain = (
-            pn_term_sn_stat_ls_fading[:, :, np.newaxis, np.newaxis] * 
-            pn_term_to_sn_stat_gain * 
-            sn_stat_to_pn_term_gain.transpose(1,0,3,2) 
+        for ite in range(n):
+
+            term_term = self._link_ls_fading_and_gain(
+                pn_term_coords[ite], sn_term_coords[ite], pn_term_height, sn_term_height, fc, rng,
+                self.pn_conf.methods["terminal_antenna_gain"], self.sn_conf.methods["terminal_antenna_gain"],
+                self.pn_term_to_sn_term_r_doas_for_all_snapshots[ite], self.sn_term_to_pn_term_r_doas_for_all_snapshots[ite],
             )
-
-        
-
-
-    # ______________________________________________________________________________________
-    #   Links between PN stations and SN stations
-    # ______________________________________________________________________________________
-        ### 1. Storage of Large scale fading and Rician K-factor
-        pn_stat_sn_stat_ls_fading_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        pn_stat_sn_stat_K_full         = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        ### 2. Storage of Antenna gain
-        pn_stat_to_sn_stat_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_to_pn_stat_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        ### 3. Storage of Large scale gains
-        pn_stat_sn_stat_ls_gain_full   = np.empty(self.num_snapshots, dtype=np.ndarray)
+            term_term_ls_fading_for_all_snapshots[ite] = term_term.ls_fading
+            term_term_K_for_all_snapshots[ite]         = term_term.K
+            term_term_ls_gain_for_all_snapshots[ite]   = term_term.ls_gain
 
 
-        ### 1. Computing of Large scale fading and Rician K-factor
-        (
-        pn_stat_sn_stat_ls_fading, 
-        pn_stat_sn_stat_K) = self.pn_conf.methods["lsf_model"].compute(pn_stat_coords[0], sn_stat_coords[0], pn_stat_height, sn_stat_height, fc, rng, None)
-        
-        ### 2. Computing of Antenna gain
-        pn_stat_to_sn_stat_gain = self.pn_conf.methods["station_antenna_gain"].compute(*self.pn_stat_to_sn_stat_r_doas_full[0])
-        sn_stat_to_pn_stat_gain = self.sn_conf.methods["station_antenna_gain"].compute(*self.sn_stat_to_pn_stat_r_doas_full[0])
-                
-        ### 3. Computing of Large scale gains
-        pn_stat_sn_stat_ls_gain = (
-            pn_stat_sn_stat_ls_fading[:, :, np.newaxis, np.newaxis] * 
-            pn_stat_to_sn_stat_gain * 
-            sn_stat_to_pn_stat_gain.transpose(1,0,3,2) 
-                    )
-
-    
-
-        
-        
-
-        for ite in range(self.num_snapshots):
-
-            # ___________________________________________
-            # Links between PN terminals and SN terminals
-            # ___________________________________________    
-
-            ### 1. Computing of Large scale fading and Rician K-factors
-            (
-            pn_term_sn_term_ls_fading, 
-            pn_term_sn_term_K) = self.pn_conf.methods["lsf_model"].compute(pn_term_coords[ite], sn_term_coords[ite], pn_term_height, sn_term_height, fc, rng, None)
-
-            pn_term_sn_term_ls_fading_full[ite] = pn_term_sn_term_ls_fading
-            pn_term_sn_term_K_full  [ite] = pn_term_sn_term_K
-
-            ### 2. Computing of Antenna gains
-            pn_term_to_sn_term_gain = self.pn_conf.methods["terminal_antenna_gain"].compute(*self.pn_term_to_sn_term_r_doas_full[ite])
-            sn_term_to_pn_term_gain = self.sn_conf.methods["terminal_antenna_gain"].compute(*self.sn_term_to_pn_term_r_doas_full[ite])
-
-            pn_term_to_sn_term_gain_full[ite] = pn_term_to_sn_term_gain
-            sn_term_to_pn_term_gain_full[ite] = sn_term_to_pn_term_gain
-
-            ### 3. Computing of Large scale gains
-            pn_term_sn_term_ls_gain = (
-                pn_term_sn_term_ls_fading[:, :, np.newaxis, np.newaxis] * 
-                pn_term_to_sn_term_gain * 
-                sn_term_to_pn_term_gain.transpose(1,0,3,2) 
-                )
-
-            pn_term_sn_term_ls_gain_full[ite] = pn_term_sn_term_ls_gain
+            # Fixed links: reuse the values computed once above.
+            term_stat_ls_fading_for_all_snapshots[ite] = term_stat_fixed.ls_fading
+            term_stat_K_for_all_snapshots[ite]         = term_stat_fixed.K
+            term_stat_ls_gain_for_all_snapshots[ite]   = term_stat_fixed.ls_gain
+ 
+            stat_stat_ls_fading_for_all_snapshots[ite] = stat_stat_fixed.ls_fading
+            stat_stat_K_for_all_snapshots[ite]         = stat_stat_fixed.K
+            stat_stat_ls_gain_for_all_snapshots[ite]   = stat_stat_fixed.ls_gain
 
 
-            ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the ls parameters don't change
-            pn_term_sn_stat_ls_fading_full[ite] = pn_term_sn_stat_ls_fading
-            pn_term_sn_stat_K_full  [ite] = pn_term_sn_stat_K
-            pn_term_to_sn_stat_gain_full  [ite] = pn_term_to_sn_stat_gain 
-            sn_stat_to_pn_term_gain_full  [ite] = sn_stat_to_pn_term_gain
-            pn_term_sn_stat_ls_gain_full  [ite] = pn_term_sn_stat_ls_gain       
 
 
-            ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the ls parameters don't change
-            pn_stat_sn_stat_ls_fading_full[ite] = pn_stat_sn_stat_ls_fading
-            pn_stat_sn_stat_K_full  [ite] = pn_stat_sn_stat_K
-            pn_stat_to_sn_stat_gain_full  [ite] = pn_stat_to_sn_stat_gain 
-            sn_stat_to_pn_stat_gain_full  [ite] = sn_stat_to_pn_stat_gain
-            pn_stat_sn_stat_ls_gain_full  [ite] = pn_stat_sn_stat_ls_gain
+        self.pn_term_sn_term_ls_fading_for_all_snapshots = term_term_ls_fading_for_all_snapshots
+        self.pn_term_sn_term_ls_gain_for_all_snapshots   = term_term_ls_gain_for_all_snapshots
+        self.pn_term_sn_term_K_for_all_snapshots      = term_term_K_for_all_snapshots
+
+        self.pn_term_sn_stat_ls_fading_for_all_snapshots = term_stat_ls_fading_for_all_snapshots
+        self.pn_term_sn_stat_ls_gain_for_all_snapshots   = term_stat_ls_gain_for_all_snapshots
+        self.pn_term_sn_stat_K_for_all_snapshots        = term_stat_K_for_all_snapshots
+
+        self.pn_stat_sn_stat_ls_fading_for_all_snapshots = stat_stat_ls_fading_for_all_snapshots
+        self.pn_stat_sn_stat_ls_gain_for_all_snapshots   = stat_stat_ls_gain_for_all_snapshots
+        self.pn_stat_sn_stat_K_for_all_snapshots         = stat_stat_K_for_all_snapshots
 
 
-        self.pn_term_sn_term_ls_fading_full = pn_term_sn_term_ls_fading_full
-        self.pn_term_sn_term_ls_gain_full   = pn_term_sn_term_ls_gain_full
-        self.pn_term_sn_term_K_full         = pn_term_sn_term_K_full
-
-        self.pn_term_sn_stat_ls_fading_full = pn_term_sn_stat_ls_fading_full
-        self.pn_term_sn_stat_ls_gain_full   = pn_term_sn_stat_ls_gain_full
-        self.pn_term_sn_stat_K_full         = pn_term_sn_stat_K_full
-
-        self.pn_stat_sn_stat_ls_fading_full = pn_stat_sn_stat_ls_fading_full
-        self.pn_stat_sn_stat_ls_gain_full   = pn_stat_sn_stat_ls_gain_full
-        self.pn_stat_sn_stat_K_full         = pn_stat_sn_stat_K_full
+        self._save_lsf_coeffs()
 
 
+    def _save_lsf_coeffs(self):
         path = dir_path + '/scenarios_storage/InterNetwork/lsg_parameters/'
+ 
+        save_npz(path, 'pn_term_sn_term_ls_fading_full.npz', pn_term_sn_term_ls_fading=self.pn_term_sn_term_ls_fading_for_all_snapshots)
+        save_npz(path, 'pn_term_sn_term_ls_gain_full.npz',   pn_term_sn_term_ls_gain=self.pn_term_sn_term_ls_gain_for_all_snapshots)
+        save_npz(path, 'pn_term_sn_term_K_full.npz',         pn_term_sn_term_K=self.pn_term_sn_term_K_for_all_snapshots)
+ 
+        save_npz(path, 'pn_term_sn_stat_ls_fading_full.npz', pn_term_sn_stat_ls_fading=self.pn_term_sn_stat_ls_fading_for_all_snapshots)
+        save_npz(path, 'pn_term_sn_stat_ls_gain_full.npz',   pn_term_sn_stat_ls_gain=self.pn_term_sn_stat_ls_gain_for_all_snapshots)
+        save_npz(path, 'pn_term_sn_stat_K_full.npz',         pn_term_sn_stat_K=self.pn_term_sn_stat_K_for_all_snapshots)
+ 
+        save_npz(path, 'pn_stat_sn_stat_ls_fading_full.npz', pn_stat_sn_stat_ls_fading=self.pn_stat_sn_stat_ls_fading_for_all_snapshots)
+        save_npz(path, 'pn_stat_sn_stat_ls_gain_full.npz',   pn_stat_sn_stat_ls_gain=self.pn_stat_sn_stat_ls_gain_for_all_snapshots)
+        save_npz(path, 'pn_stat_sn_stat_K_full.npz',         pn_stat_sn_stat_K=self.pn_stat_sn_stat_K_for_all_snapshots)
 
-        np.savez(path + 'pn_term_sn_term_ls_fading_full.npz', pn_term_sn_term_ls_fading = self.pn_term_sn_term_ls_fading_full)
-        np.savez(path + 'pn_term_sn_term_ls_gain_full.npz',   pn_term_sn_term_ls_gain   = self.pn_term_sn_term_ls_gain_full)
-        np.savez(path + 'pn_term_sn_term_K_full.npz',         pn_term_sn_term_K         = self.pn_term_sn_term_K_full)
+
+    def _R(self, r_doas, N_a, N_b):
+        return self.sn_conf.methods["correlation_model"].compute_fast_integrals(*r_doas, N_a, N_b)
 
 
-        np.savez(path + 'pn_term_sn_stat_ls_fading_full.npz', pn_term_sn_stat_ls_fading = self.pn_term_sn_stat_ls_fading_full)
-        np.savez(path + 'pn_term_sn_stat_ls_gain_full.npz',   pn_term_sn_stat_ls_gain   = self.pn_term_sn_stat_ls_gain_full)
-        np.savez(path + 'pn_term_sn_stat_K_full.npz',         pn_term_sn_stat_K         = self.pn_term_sn_stat_K_full)
-
-        np.savez(path + 'pn_stat_sn_stat_ls_fading_full.npz', pn_stat_sn_stat_ls_fading = self.pn_stat_sn_stat_ls_fading_full)
-        np.savez(path + 'pn_stat_sn_stat_ls_gain_full.npz',   pn_stat_sn_stat_ls_gain   = self.pn_stat_sn_stat_ls_gain_full)
-        np.savez(path + 'pn_stat_sn_stat_K_full.npz',         pn_stat_sn_stat_K         = self.pn_stat_sn_stat_K_full)
+    def _parallel_R(self, doas_h, doas_v, num_panels_a, num_panels_b,
+                                    a_N_h, a_N_v, split_side):
     
+            """
+            Relative DoAs from `a` to `b`, computed in parallel by splitting the SN
+            stations (always the "AP" side of the link) across several processes.
+     
+            split_side='b' -> the SN stations are `coords_b` (sliced on axis 1 of the result)
+            split_side='a' -> the SN stations are `coords_a` (sliced on axis 0 of the result)
+     
+            NOTE: `boresights_a` is always passed whole (never sliced), matching the
+            original implementation's behaviour even in the split_side='a' case.
+            """
+    
+    
+            num_a = doas_h.shape[0]
+            num_b = doas_v.shape[1]
+    
+            num_groups = os.cpu_count() - 2
+            num_sn_stations = self.sn_conf.num_stations
+            division = num_sn_stations // num_groups
 
+            a_N = a_N_h * a_N_v
+    
+            R_matrices = np.zeros((num_a, num_b, num_panels_a, num_panels_b, a_N, a_N), dtype=np.complex128)
+    
+            processes, queues = [], []
+    
+            for i in range(num_groups):
+    
+                idx_b, idx_e = group_slice_bounds(i, num_groups, division, num_sn_stations)
+                if split_side == 'b':
+                    args = (doas_h[:, idx_b:idx_e], doas_v[:, idx_b:idx_e], a_N_h, a_N_v)
+    
+                else:
+                    args = (doas_h[idx_b:idx_e], doas_v[idx_b:idx_e], a_N_h, a_N_v)
+    
+                process, queue = self._start(self.sn_conf.methods["correlation_model"].compute_fast_integrals_for_queue, args)
+                processes.append(process)
+                queues.append(queue)
+    
+            for i in range(num_groups):
+                idx_b, idx_e = self._group_slice_bounds(i, num_groups, division, num_sn_stations)
+                if split_side == 'b':
+                    R_matrices[:, idx_b:idx_e], doas_v[:, idx_b:idx_e] = queues[i].get()
+                else:
+                    R_matrices[idx_b:idx_e], doas_v[idx_b:idx_e] = queues[i].get()
+     
+            for process in processes:
+                process.join()
+     
+            return R_matrices
 
     def compute_R_matrices(self):
 
@@ -801,86 +1126,102 @@ class InterNetworkLinksBuilder:
         sn_array_N_h = self.sn_conf.array_N_h
         sn_array_N_v = self.sn_conf.array_N_v
 
+        n = self.num_snapshots
+
         ### OBS: The default is [RX] -> [TX] for the R matrices, so the first argument is always the RX and the second is always the TX
 
         ### Storage of the R matrices for each snapshot
-        pn_term_to_sn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_term_to_pn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_sn_term_R_matrices_for_all_snapshots = empty_object_array(n)
+        sn_term_pn_term_R_matrices_for_all_snapshots = empty_object_array(n)
 
         ### Storage of the R matrices for each snapshot
-        pn_term_to_sn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_to_pn_term_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_term_sn_stat_R_matrices_for_all_snapshots = empty_object_array(n)
+        sn_stat_pn_term_R_matrices_for_all_snapshots = empty_object_array(n)
 
         ### Storage of the R matrices for each snapshot
-        pn_stat_to_sn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-        sn_stat_to_pn_stat_R_matrices_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        pn_stat_sn_stat_R_matrices_for_all_snapshots = empty_object_array(n)
+        sn_stat_pn_stat_R_matrices_for_all_snapshots = empty_object_array(n)
 
-        # ______________________________________________________________________________________
-        # Links between PN terminals and SN stations
-        # ______________________________________________________________________________________
+
+
+
 
         ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the R matrices don't change
 
-        pn_term_to_sn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.pn_term_to_sn_stat_r_doas_full[0], pn_panel_N_v, pn_panel_N_v)
+        pn_term_sn_stat_R = self._R(self.pn_term_to_sn_stat_r_doas_for_all_snapshots[0], pn_panel_N_v, pn_panel_N_v)
 
-        sn_stat_to_pn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.sn_stat_to_pn_term_r_doas_full[0], sn_array_N_h, sn_array_N_v)
+        sn_stat_pn_term_R = self._R(self.sn_stat_to_pn_term_r_doas_for_all_snapshots[0], sn_array_N_h, sn_array_N_v)
 
-
-
-        # ______________________________________________________________________________________
-        # Links between PN stations and SN stations
-        # ______________________________________________________________________________________    
 
         ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the R matrices don't change
 
-        pn_stat_to_sn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.pn_stat_to_sn_stat_r_doas_full[0], pn_array_N_h, pn_array_N_v)
+        pn_stat_sn_stat_R = self._R(self.pn_stat_to_sn_stat_r_doas_for_all_snapshots[0], pn_array_N_h, pn_array_N_v)
 
-        sn_stat_to_pn_stat_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.sn_stat_to_pn_stat_r_doas_full[0], sn_array_N_h, sn_array_N_v)
+        sn_stat_pn_stat_R = self._R(self.sn_stat_to_pn_stat_r_doas_for_all_snapshots[0], sn_array_N_h, sn_array_N_v)
 
 
         for ite in range(self.num_snapshots):
 
-            # ___________________________________________
             # Links between PN terminals and SN terminals
-            # ___________________________________________    
 
-            pn_term_to_sn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.pn_term_to_sn_term_r_doas_full[ite], pn_panel_N_v, pn_panel_N_v)
+            pn_term_sn_term_R = self._R(self.pn_term_to_sn_term_r_doas_for_all_snapshots[ite], pn_panel_N_v, pn_panel_N_v)
 
-            sn_term_to_pn_term_R_matrices = self.sn_conf.methods["correlation_model"].compute_fast_integrals(*self.sn_term_to_pn_term_r_doas_full[ite], sn_panel_N_h, sn_panel_N_v)
+            sn_term_pn_term_R = self._R(self.sn_term_to_pn_term_r_doas_for_all_snapshots[ite], sn_panel_N_h, sn_panel_N_v)
 
-            pn_term_to_sn_term_R_matrices_full[ite] = pn_term_to_sn_term_R_matrices
-            sn_term_to_pn_term_R_matrices_full[ite] = sn_term_to_pn_term_R_matrices
+            pn_term_sn_term_R_matrices_for_all_snapshots[ite] = pn_term_sn_term_R
+            sn_term_pn_term_R_matrices_for_all_snapshots[ite] = sn_term_pn_term_R
 
 
             ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the R matrices don't change
-            pn_term_to_sn_stat_R_matrices_full[ite] = pn_term_to_sn_stat_R_matrices
-            sn_stat_to_pn_term_R_matrices_full[ite] = sn_stat_to_pn_term_R_matrices
+            pn_term_sn_stat_R_matrices_for_all_snapshots[ite] = pn_term_sn_stat_R
+            sn_stat_pn_term_R_matrices_for_all_snapshots[ite] = sn_stat_pn_term_R
 
             ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the R matrices don't change
-            pn_stat_to_sn_stat_R_matrices_full[ite] = pn_stat_to_sn_stat_R_matrices
-            sn_stat_to_pn_stat_R_matrices_full[ite] = sn_stat_to_pn_stat_R_matrices
+            pn_stat_sn_stat_R_matrices_for_all_snapshots[ite] = pn_stat_sn_stat_R
+            sn_stat_pn_stat_R_matrices_for_all_snapshots[ite] = sn_stat_pn_stat_R
 
 
-        self.pn_term_to_sn_term_R_matrices_full = pn_term_to_sn_term_R_matrices_full
-        self.sn_term_to_pn_term_R_matrices_full = sn_term_to_pn_term_R_matrices_full
+        self.pn_term_to_sn_term_R_matrices_for_all_snapshots = pn_term_sn_term_R_matrices_for_all_snapshots
+        self.sn_term_to_pn_term_R_matrices_for_all_snapshots = sn_term_pn_term_R_matrices_for_all_snapshots
 
-        self.pn_term_to_sn_stat_R_matrices_full = pn_term_to_sn_stat_R_matrices_full
-        self.sn_stat_to_pn_term_R_matrices_full = sn_stat_to_pn_term_R_matrices_full
+        self.pn_term_to_sn_stat_R_matrices_for_all_snapshots = pn_term_sn_stat_R_matrices_for_all_snapshots
+        self.sn_stat_to_pn_term_R_matrices_for_all_snapshots = sn_stat_pn_term_R_matrices_for_all_snapshots
 
-        self.pn_stat_to_sn_stat_R_matrices_full = pn_stat_to_sn_stat_R_matrices_full
-        self.sn_stat_to_pn_stat_R_matrices_full = sn_stat_to_pn_stat_R_matrices_full
+        self.pn_stat_to_sn_stat_R_matrices_for_all_snapshots = pn_stat_sn_stat_R_matrices_for_all_snapshots
+        self.sn_stat_to_pn_stat_R_matrices_for_all_snapshots = sn_stat_pn_stat_R_matrices_for_all_snapshots
+
+
+
+
+
+    def _save_R_matrices(self):
 
         path = dir_path + '/scenarios_storage/InterNetwork/R_matrices/'
 
-        np.savez(path + 'pn_term_sn_term_R_matrices_full', pn_term_sn_term_R_matrices = self.pn_term_to_sn_term_R_matrices_full)
-        np.savez(path + 'sn_term_pn_term_R_matrices_full', sn_term_pn_term_R_matrices = self.sn_term_to_pn_term_R_matrices_full)
+        save_npz(path + 'pn_term_sn_term_R_matrices_full', pn_term_sn_term_R_matrices = self.pn_term_to_sn_term_R_matrices_full)
+        save_npz(path + 'sn_term_pn_term_R_matrices_full', sn_term_pn_term_R_matrices = self.sn_term_to_pn_term_R_matrices_full)
 
-        np.savez(path + 'pn_term_sn_stat_R_matrices_full', pn_term_sn_stat_R_matrices = self.pn_term_to_sn_stat_R_matrices_full)
-        np.savez(path + 'sn_stat_pn_term_R_matrices_full', sn_stat_pn_term_R_matrices = self.sn_stat_to_pn_term_R_matrices_full)
+        save_npz(path + 'pn_term_sn_stat_R_matrices_full', pn_term_sn_stat_R_matrices = self.pn_term_to_sn_stat_R_matrices_full)
+        save_npz(path + 'sn_stat_pn_term_R_matrices_full', sn_stat_pn_term_R_matrices = self.sn_stat_to_pn_term_R_matrices_full)
 
-        np.savez(path + 'pn_stat_sn_stat_R_matrices_full', pn_stat_sn_stat_R_matrices = self.pn_stat_to_sn_stat_R_matrices_full)
-        np.savez(path + 'sn_stat_pn_stat_R_matrices_full', sn_stat_pn_stat_R_matrices = self.sn_stat_to_pn_stat_R_matrices_full)
+        save_npz(path + 'pn_stat_sn_stat_R_matrices_full', pn_stat_sn_stat_R_matrices = self.pn_stat_to_sn_stat_R_matrices_full)
+        save_npz(path + 'sn_stat_pn_stat_R_matrices_full', sn_stat_pn_stat_R_matrices = self.sn_stat_to_pn_stat_R_matrices_full)
 
+
+
+    def _generate_channel(self, ite, ls_gain_for_all_snapshots, K_for_all_snapshots, rx_R_for_all_snapshots, tx_R_for_all_snapshots,
+                           rx_doas_for_all_snapshots, tx_doas_for_all_snapshots, rx_N, tx_N, rng):
+        return self.pn_conf.methods["channel_model"].generate_multiple_channels(
+            ls_gain_coeffs=ls_gain_for_all_snapshots[ite],
+            K_coeffs=K_for_all_snapshots[ite][:, :, np.newaxis, np.newaxis],
+            rx_R_matrices=rx_R_for_all_snapshots[ite],
+            tx_R_matrices=tx_R_for_all_snapshots[ite],
+            rx_doas=(rx_doas_for_all_snapshots[ite][0], rx_doas_for_all_snapshots[ite][1]),
+            tx_doas=(tx_doas_for_all_snapshots[ite][0], tx_doas_for_all_snapshots[ite][1]),
+            rx_N=rx_N,
+            tx_N=tx_N,
+            rng=rng,
+        )
 
 
 
@@ -893,116 +1234,73 @@ class InterNetworkLinksBuilder:
         
         """
 
-        pn_panel_N_h = 1
-        pn_panel_N_v = 1
+        # Primary network terminal antennas
+        pn_pan_N_h = 1
+        pn_pan_N_v = 1
+        pn_pan_N = (pn_pan_N_h, pn_pan_N_v)
 
-        pn_array_N_h = 1
-        pn_array_N_v = 1
+        # Primary network station antennas
+        pn_arr_N_h = 1
+        pn_arr_N_v = 1
+        pn_arr_N = (pn_arr_N_h, pn_arr_N_v)
 
-        sn_panel_N_h = self.sn_conf.panel_N_h
-        sn_panel_N_v = self.sn_conf.panel_N_v
 
-        sn_array_N_h = self.sn_conf.array_N_h
-        sn_array_N_v = self.sn_conf.array_N_v
+        sn_pan_N_h = self.sn_conf.panel_N_h
+        sn_pan_N_v = self.sn_conf.panel_N_v
+        sn_pan_N = (sn_pan_N_h, sn_pan_N_v)
+    
+        sn_arr_N_h = self.sn_conf.array_N_h
+        sn_arr_N_v = self.sn_conf.array_N_v
+        sn_arr_N = (sn_arr_N_h, sn_arr_N_v)
 
-        # ___________________________________________
+
+        n = self.num_snapshots
+        
         # Links between PN terminals and SN terminals
-        # ___________________________________________  
+        term_term_H = np.empty(self.num_snapshots, dtype=np.ndarray)
 
-        pn_term_sn_term_H_full = np.empty(self.num_snapshots, dtype=np.ndarray)
-
-        # ___________________________________________
         # Links between PN terminals and SN stations
-        # ___________________________________________  
-
-        pn_term_sn_stat_H_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        term_stat_H = np.empty(self.num_snapshots, dtype=np.ndarray)
         
-        # ___________________________________________
         # Links between PN stations and SN stations
-        # ___________________________________________  
-
-        pn_stat_sn_stat_H_full = np.empty(self.num_snapshots, dtype=np.ndarray)
+        stat_stat_H = np.empty(self.num_snapshots, dtype=np.ndarray)
 
 
         
-        for ite in range(self.num_snapshots):
-
-
-            # 1. Generate the channel coefficients for the links between PN terminals and SN terminals
-            pn_term_sn_term_H = self.pn_conf.methods["channel_model"].generate_multiple_channels(
-                gain_Coefficients = self.pn_term_sn_term_ls_gain_full[ite],
-                K_Coefficients = self.pn_term_sn_term_K_full[ite][:, :, np.newaxis, np.newaxis],
-                rx_R_Matrixes = self.pn_term_to_sn_term_R_matrices_full[ite],
-                tx_R_Matrixes = self.sn_term_to_pn_term_R_matrices_full[ite],
-                rx_relative_AoAs_h = self.pn_term_to_sn_term_r_doas_full[ite][0],
-                rx_relative_AoAs_v = self.pn_term_to_sn_term_r_doas_full[ite][1],
-                tx_relative_AoAs_h = self.sn_term_to_pn_term_r_doas_full[ite][0],
-                tx_relative_AoAs_v = self.sn_term_to_pn_term_r_doas_full[ite][1],
-                N_h_rx = pn_panel_N_h, N_v_rx = pn_panel_N_v,
-                N_h_tx = sn_panel_N_h, N_v_tx = sn_panel_N_v,
-                rng = rng
+        for ite in range(n):
+ 
+            term_term_H[ite] = self._generate_channel(
+                ite, self.pn_term_sn_term_ls_gain_for_all_snapshots, self.pn_term_sn_term_K_for_all_snapshots,
+                self.pn_term_to_sn_term_R_matrices_for_all_snapshots, self.sn_term_to_pn_term_R_matrices_for_all_snapshots,
+                self.pn_term_to_sn_term_r_doas_for_all_snapshots, self.sn_term_to_pn_term_r_doas_for_all_snapshots,
+                pn_pan_N, sn_pan_N, rng
             )
-            pn_term_sn_term_H_full[ite] = pn_term_sn_term_H
-
-
-            # 2. Generate the channel coefficients for the links between PN terminals and SN stations
-            pn_term_sn_stat_H = self.pn_conf.methods["channel_model"].generate_multiple_channels(
-
-                gain_Coefficients = self.pn_term_sn_stat_ls_gain_full[ite],
-                K_Coefficients = self.pn_term_sn_stat_K_full[ite][:, :, np.newaxis, np.newaxis],
-                rx_R_Matrixes = self.pn_term_to_sn_stat_R_matrices_full[ite],
-                tx_R_Matrixes = self.sn_stat_to_pn_term_R_matrices_full[ite],
-                rx_relative_AoAs_h = self.pn_term_to_sn_stat_r_doas_full[ite][0],
-                rx_relative_AoAs_v = self.pn_term_to_sn_stat_r_doas_full[ite][1],
-                tx_relative_AoAs_h = self.sn_stat_to_pn_term_r_doas_full[ite][0],
-                tx_relative_AoAs_v = self.sn_stat_to_pn_term_r_doas_full[ite][1],
-                N_h_rx = pn_panel_N_h, N_v_rx = pn_panel_N_v,
-                N_h_tx = sn_array_N_h, N_v_tx = sn_array_N_v,
-                rng = rng
+ 
+            term_stat_H[ite] = self._generate_channel(
+                ite, self.pn_term_sn_stat_ls_gain_for_all_snapshots, self.pn_term_sn_stat_K_for_all_snapshots,
+                self.pn_term_to_sn_stat_R_matrices_for_all_snapshots, self.sn_stat_to_pn_term_R_matrices_for_all_snapshots,
+                self.pn_term_to_sn_stat_r_doas_for_all_snapshots, self.sn_stat_to_pn_term_r_doas_for_all_snapshots,
+                pn_pan_N, sn_arr_N, rng
             )
-            pn_term_sn_stat_H_full[ite] = pn_term_sn_stat_H
-
-
-            # 3. Generate the channel coefficients for the links between PN stations and SN stations
-
-            pn_stat_sn_stat_H = self.pn_conf.methods["channel_model"].generate_multiple_channels(
-                gain_Coefficients = self.pn_stat_sn_stat_ls_gain_full[ite],
-                K_Coefficients = self.pn_stat_sn_stat_K_full[ite][:, :, np.newaxis, np.newaxis],
-                rx_R_Matrixes = self.pn_stat_to_sn_stat_R_matrices_full[ite],
-                tx_R_Matrixes = self.sn_stat_to_pn_stat_R_matrices_full[ite],
-                rx_relative_AoAs_h = self.pn_stat_to_sn_stat_r_doas_full[ite][0],
-                rx_relative_AoAs_v = self.pn_stat_to_sn_stat_r_doas_full[ite][1],
-                tx_relative_AoAs_h = self.sn_stat_to_pn_stat_r_doas_full[ite][0],
-                tx_relative_AoAs_v = self.sn_stat_to_pn_stat_r_doas_full[ite][1],
-                N_h_rx = pn_array_N_h, N_v_rx = pn_array_N_v,
-                N_h_tx = sn_array_N_h, N_v_tx = sn_array_N_v,
-                rng = rng
+ 
+            stat_stat_H[ite] = self._generate_channel(
+                ite, self.pn_stat_sn_stat_ls_gain_for_all_snapshots, self.pn_stat_sn_stat_K_for_all_snapshots,
+                self.pn_stat_to_sn_stat_R_matrices_for_all_snapshots, self.sn_stat_to_pn_stat_R_matrices_for_all_snapshots,
+                self.pn_stat_to_sn_stat_r_doas_for_all_snapshots, self.sn_stat_to_pn_stat_r_doas_for_all_snapshots,
+                pn_arr_N, sn_arr_N, rng
             )
-
-            pn_stat_sn_stat_H_full[ite] = pn_stat_sn_stat_H
-
-
-
-        self.pn_term_sn_term_H_full = pn_term_sn_term_H_full
-        self.pn_term_sn_stat_H_full = pn_term_sn_stat_H_full
-        self.pn_stat_sn_stat_H_full = pn_stat_sn_stat_H_full
-
+ 
+        self.pn_term_sn_term_H_for_all_snapshots = term_term_H
+        self.pn_term_sn_stat_H_for_all_snapshots = term_stat_H
+        self.pn_stat_sn_stat_H_for_all_snapshots = stat_stat_H
+ 
+        self._save_channels()
+ 
+    def _save_channels(self):
         path = dir_path + '/scenarios_storage/InterNetwork/H_coeffs/'
-
-        np.savez(path + 'pn_term_sn_term_H_full.npz', pn_term_sn_term_H = self.pn_term_sn_term_H_full)
-        np.savez(path + 'pn_term_sn_stat_H_full.npz', pn_term_sn_stat_H = self.pn_term_sn_stat_H_full)
-        np.savez(path + 'pn_stat_sn_stat_H_full.npz', pn_stat_sn_stat_H = self.pn_stat_sn_stat_H_full)
-
-
-
-            
-
-
-
-
-
-
-            
-
+ 
+        save_npz(path, 'pn_term_sn_term_H_full.npz', pn_term_sn_term_H=self.pn_term_sn_term_H_for_all_snapshots)
+        save_npz(path, 'pn_term_sn_stat_H_full.npz', pn_term_sn_stat_H=self.pn_term_sn_stat_H_for_all_snapshots)
+        save_npz(path, 'pn_stat_sn_stat_H_full.npz', pn_stat_sn_stat_H=self.pn_stat_sn_stat_H_for_all_snapshots)
 
 

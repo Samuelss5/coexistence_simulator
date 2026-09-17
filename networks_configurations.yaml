@@ -21,7 +21,7 @@ Fixed_service:
   ### SPATIAL CORRELATION ###
 
   correlation_model_module_path: 'source/physical/spatial_correlation.py'
-  correlation_model_method_class: 'Gaussian_correlation'
+  correlation_model_method_class: 'GaussianSpatialCorrelationModel'
 
   ### LARGE SCALE FADING ###
 
@@ -31,7 +31,7 @@ Fixed_service:
   ### CHANNEL MODEL ###
 
   channel_model_module_path: 'source/physical/channel.py'
-  channel_model_method_class: 'RicianChannel'
+  channel_model_method_class: 'RicianChannelModel'
 
   ### CHANNEL ESTIMATION METHOD ###
 
@@ -100,13 +100,13 @@ Dmimo_network:
   station_deployment_method_class: 'RegularGridDeployment'
 
   correlation_model_module_path: 'source/physical/spatial_correlation.py'
-  correlation_model_method_class: 'GaussianCorrelation'
+  correlation_model_method_class: 'GaussianSpatialCorrelationModel'
 
   lsf_model_module_path: 'source/physical/large_scale_fading.py'
   lsf_model_method_class: 'UMa_3gpp_large_scale_fading'
 
   channel_model_module_path: 'source/physical/channel.py'
-  channel_model_method_class: 'RicianChannel'
+  channel_model_method_class: 'RicianChannelModel'
 
   channel_estimation_module_path: 'source/channel_estimation.py'
   channel_estimation_method_class: 'Centralized_MMSE_estimation'
@@ -154,7 +154,7 @@ Dmimo_network:
 
 
   num_terminals: 4
-  num_stations: 16
+  num_stations: 4
 
   num_panels: 4
   num_arrays: 3
@@ -187,6 +187,6 @@ Dmimo_network:
   num_pilot_sequences: 10
 
 
-num_snapshots: 2
+num_snapshots: 20
 
 

@@ -63,7 +63,7 @@ class ScenarioGenerator:
         builder = InterNetworkLinksBuilder(self.pn_geometry, self.sn_geometry, self.pn_config, self.sn_config, self.num_snapshots)
 
         builder.compute_doas()
-        builder.compute_lsf_coeffs(self.seeds.get(0))
+        builder.compute_large_scale_coeffs(self.seeds.get(0))
         builder.compute_R_matrices()
         builder.generate_channels(self.seeds.get(0))
 

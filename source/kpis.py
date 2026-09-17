@@ -1,5 +1,7 @@
 import numpy as np
 
+from source.signal import DMimoInternalSignals
+
 class SignalProcessor:
  
     def __init__(self, config):
@@ -38,24 +40,44 @@ class SignalProcessor:
 
 class KpiCalculator:
 
+
+
     def __init__(self, pn_noise_variance: float, sn_noise_variance: float):
         self._pn_noise_variance = pn_noise_variance
         self._sn_noise_variance = sn_noise_variance
 
-   
+
+    # Compute PN spectral efficiency 
+
+
         
     def compute_sn_uplink_caused_inr(self, 
                         pn_term_sn_term_H, sn_sched_term, sn_sel_panels, 
                         pn_term_combining, sn_term_max_power
                         ) -> np.ndarray:
-        
-        from source.signal import UplinkToDownlinkInterference
-        interference = UplinkToDownlinkInterference.compute(
-            pn_term_sn_term_H, sn_sched_term, sn_sel_panels, 
-            pn_term_combining, sn_term_max_power
-        )
 
-        inr = interference / self._pn_noise_variance
+
+        if len(sn_sched_term) > 0:
+
+            from source.signal import InterNetInterf
+
+            pn_panels_idxs = np.zeros(pn_term_sn_term_H.shape[0], dtype=int)
+
+            # Channel matrix between the PN terminals and the SN terminals (pre-sliced -> selected panels)
+
+            H_pn_term_to_sn_term = pn_term_sn_term_H[:, sn_sched_term, pn_panels_idxs, sn_sel_panels[sn_sched_term], :]
+            
+            interference = InterNetInterf.uplink_to_downlink(
+                H_pn_term_to_sn_term
+            )
+
+            inr = interference / self._pn_noise_variance
+
+        else: 
+
+            inr = np.zeros(pn_term_sn_term_H.shape[0], dtype=float)
+
+            print("inr: ", inr)
 
         return inr
 
@@ -68,34 +90,29 @@ class KpiCalculator:
                         ):
 
         # 1. Desired signal component
-        from source.signal import DMimoUplinkTargetSignal
+        
 
-        target_signals = DMimoUplinkTargetSignal.compute(
+        target_signals = DMimoInternalSignals.uplink_target_signal(
             sn_H, clustering, sn_sched_term, sn_sel_panels, sn_ul_combining, sn_term_max_power
         )
 
         # 2. Interference signals component
-        from source.signal import DMimoIntraUplinkInterference
 
-        intra_interference = DMimoIntraUplinkInterference.compute(
+
+        intra_interference = DMimoInternalSignals.uplink_intra_interference(
             sn_H, clustering, sn_sched_term, sn_sel_panels, sn_ul_combining, sn_term_max_power
         )
 
-        from source.signal import DownlinkToDMimoUplinkInterference
 
-        inter_interference = DownlinkToDMimoUplinkInterference.compute(
-            pn_stat_sn_stat_H, clustering, sn_sched_term, sn_ul_combining, pn_stat_max_power
-        )
+        
 
         # 3. Receiving noise power
 
-        from source.signal import DMimoUplinkNoise 
-
-        receiver_noise = DMimoUplinkNoise.compute(
+        receiver_noise = DMimoInternalSignals.uplink_receiving_noise(
             clustering, sn_sched_term, sn_ul_combining, self._sn_noise_variance, rng
         )
 
-        sinrs = target_signals / (receiver_noise + intra_interference + inter_interference)
+        sinrs = target_signals / (receiver_noise + intra_interference)
         sinrs[np.where(np.isnan(sinrs))[0]] = 0
 
         spec_effs = np.log2(1 + sinrs)
