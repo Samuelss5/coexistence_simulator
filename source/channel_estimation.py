@@ -37,19 +37,23 @@ class Centralized_MMSE_estimation:
 
         R_ul = np.zeros((L, K, Ns, Ns), dtype=np.complex128)
 
-        for k in range(len(scheduled_ues)):
-            ue_k_idx = scheduled_ues[k]
-            sp_k     = sel_panels[k]    
+        for ue_k in scheduled_ues:
+            
+            sp_k     = sel_panels[ue_k]    
 
             # Current shape -> (S, A, Nt, Ns)
-            H_k = H_coeffs[ue_k_idx, :, sp_k, :]
-
+            H_k = H_coeffs[ue_k, :, sp_k, :]
+            
+            if ue_k == scheduled_ues[0]:
+            
+                print("H_k: ", H_k.shape)
+            
             H_k = H_k.transpose(0, 1, 3, 2)
             H_k = H_k.reshape(L, Ns, Nt)
 
-            H_ul[:, ue_k_idx, ...] = H_k
+            H_ul[:, ue_k, ...] = H_k
 
-            R_ul[:, ue_k_idx, ...] = Rs_dense[:, ue_k_idx, :, sp_k].reshape(L, Ns, Ns)
+            R_ul[:, ue_k, ...] = Rs_dense[:, ue_k, :, sp_k].reshape(L, Ns, Ns)
 
 
 
@@ -65,49 +69,49 @@ class Centralized_MMSE_estimation:
         pilot_allocation_vec = np.full(K, None, dtype = object)
 
         num_scheduled = len(scheduled_ues)
-
+        
         if num_scheduled > 0:
             pilot_allocation_vec[scheduled_ues] = np.arange(num_scheduled) % tau_p
-
-
+            
+        print("pilot_allocation_vec: ", pilot_allocation_vec)
 
         H_estimated = np.zeros(H_ul.shape, dtype = np.complex128)
 
         C_error_matrixes = np.zeros((K, L, Ns, Ns), dtype = np.complex128)
+        
+        eyeN = np.eye(Ns)
 
         for p in range(tau_p):
             
             # UEs sharing the pilot sequence p
-            pilot_p_ues_vec = np.where(pilot_allocation_vec == p)[0]
-
-            
+            ues_mask = np.where(pilot_allocation_vec == p)[0]
+        
             for l in range(L):
-
-                # Pilot signal received by the l-th Station
-                Y_l = np.sqrt(ul_max_power * tau_p) * np.sum(H_ul[l, pilot_p_ues_vec], axis = 0)
-
-                Noise_l = np.random.normal(size=Y_l.shape) + 1j * np.random.normal(size=Y_l.shape)
-
-                Y_l += Noise_l * np.sqrt(0.5) * noise_var
+            
+                sum_x = np.sum(H_ul[l, ues_mask], axis = 0)
                 
-                Psi_matrix = np.sum(R_ul[l, pilot_p_ues_vec], axis = 0) * tau_p * ul_max_power + np.eye(Ns) * noise_var
+                yp = np.sqrt(ul_max_power) * tau_p * np.sum(H_ul[l, ues_mask], axis = 0)
+                
+                PsiInv = ul_max_power * tau_p * np.sum(R_ul[l, ues_mask], axis = 0) + eyeN
+                
+                Psi_inv_matrix = np.linalg.inv(PsiInv)
 
-                for k in pilot_p_ues_vec:
+                for ue_k in ues_mask:
 
-                    R_kl = R_ul[l, k]
+                    RPsi = R_ul[l, ue_k] @ Psi_inv_matrix
 
-                    R_kl_Psi = R_kl * np.linalg.inv(Psi_matrix)
+                    C_error_matrixes[ue_k, l] = R_ul[l, ue_k] - ul_max_power * tau_p * (RPsi @ R_ul[l, ue_k])
+                    
+                    H_estimated[l, ue_k] = np.sqrt(ul_max_power) * (RPsi @ yp)
+                 
+                    
 
-
-                    C_kl = R_kl - ul_max_power * tau_p * (R_kl_Psi @ R_kl)
-
-                    C_error_matrixes[k,l] = C_kl
-
-                    # Estimated channel
-                    H_kl = np.sqrt(ul_max_power * tau_p) * (R_kl_Psi @ Y_l)
-
-                    H_estimated[l,k] = H_kl 
-
+        #print("H_ul")
+        #print(H_ul[0, scheduled_ues[0]])
+        
+        #print("H_estimated")
+        #print(H_estimated[0, scheduled_ues[0]])
+        
         return H_estimated, C_error_matrixes
 
     

@@ -1,0 +1,128 @@
+Job started at Tue Sep 22 12:50:35 PM UTC 2026
+source/physical/large_scale_fading.py
+source/physical/channel.py
+source/physical/antenna_pattern.py
+source/physical/antenna_pattern.py
+source/physical/large_scale_fading.py
+source/physical/channel.py
+source/physical/spatial_correlation.py
+source/channel_estimation.py
+source/physical/antenna_pattern.py
+source/physical/antenna_pattern.py
+source/geometry/coordinates.py
+source/geometry/coordinates.py
+source/geometry/sectorization.py
+source/geometry/sectorization.py
+source/beamforming.py
+source/beamforming.py
+source/RunSnapshots.py
+source/RunSnapshots.py
+DMimo: generating coordinates
+DMimo: defining boresights
+DMimo: computing relative directions of arrival
+DMimo: computing antennas gains
+DMimo: computing spatial correlation matrices
+DMimo: computing large scale fading coefficients
+DMimo: computing large scale gain coefficients
+DMimo: generating channel coefficients
+Inter network snapshot 0
+Inter network snapshot 1
+Inter network snapshot 2
+Inter network snapshot 3
+Inter network snapshot 4
+Inter network snapshot 5
+Inter network snapshot 6
+Inter network snapshot 7
+Inter network snapshot 8
+Inter network snapshot 9
+Inter network snapshot 10
+Inter network snapshot 11
+Inter network snapshot 12
+Inter network snapshot 13
+Inter network snapshot 14
+Inter network snapshot 15
+Inter network snapshot 16
+Inter network snapshot 17
+Inter network snapshot 18
+Inter network snapshot 19
+Inter network snapshot 20
+Inter network snapshot 21
+Inter network snapshot 22
+Inter network snapshot 23
+Inter network snapshot 24
+Inter network snapshot 25
+Inter network snapshot 26
+Inter network snapshot 27
+Inter network snapshot 28
+Inter network snapshot 29
+Inter network snapshot 30
+Inter network snapshot 31
+Inter network snapshot 32
+Inter network snapshot 33
+Inter network snapshot 34
+Inter network snapshot 35
+Inter network snapshot 36
+Inter network snapshot 37
+Inter network snapshot 38
+Inter network snapshot 39
+Inter network snapshot 40
+Inter network snapshot 41
+Inter network snapshot 42
+Inter network snapshot 43
+Inter network snapshot 44
+Inter network snapshot 45
+Inter network snapshot 46
+Inter network snapshot 47
+Inter network snapshot 48
+Inter network snapshot 49
+Inter network snapshot 50
+Inter network snapshot 51
+Inter network snapshot 52
+Inter network snapshot 53
+Inter network snapshot 54
+Inter network snapshot 55
+Inter network snapshot 56
+Inter network snapshot 57
+Inter network snapshot 58
+Inter network snapshot 59
+Inter network snapshot 60
+Inter network snapshot 61
+Inter network snapshot 62
+Inter network snapshot 63
+Inter network snapshot 64
+Inter network snapshot 65
+Inter network snapshot 66
+Inter network snapshot 67
+Inter network snapshot 68
+Inter network snapshot 69
+Inter network snapshot 70
+Inter network snapshot 71
+Inter network snapshot 72
+Inter network snapshot 73
+Inter network snapshot 74
+Inter network snapshot 75
+Inter network snapshot 76
+Inter network snapshot 77
+Inter network snapshot 78
+Inter network snapshot 79
+Inter network snapshot 80
+Inter network snapshot 81
+Inter network snapshot 82
+Inter network snapshot 83
+Inter network snapshot 84
+Inter network snapshot 85
+Inter network snapshot 86
+Inter network snapshot 87
+Inter network snapshot 88
+Inter network snapshot 89
+Inter network snapshot 90
+Inter network snapshot 91
+Inter network snapshot 92
+Inter network snapshot 93
+Inter network snapshot 94
+Inter network snapshot 95
+Inter network snapshot 96
+Inter network snapshot 97
+Inter network snapshot 98
+Inter network snapshot 99
+Job ended at Tue Sep 22 02:01:34 PM UTC 2026

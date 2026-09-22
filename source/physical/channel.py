@@ -27,7 +27,7 @@ class RicianChannelModel:
 
         # Receiver num of antennas indexes (H and V)
         rx_N_h_arange = np.arange(0, rx_N[0])
-        rx_N_v_arange = np.arange(0, tx_N[1])
+        rx_N_v_arange = np.arange(0, rx_N[1])
 
         # Receiver total num of antennas
         rx_N_tot = rx_N[0] * rx_N[1]
@@ -79,20 +79,23 @@ class RicianChannelModel:
         tx_arrays_factors = tx_h_arrays_factors[..., :, None] * tx_v_arrays_factors[..., None, :]
         new_shape = tx_arrays_factors.shape[:-2] + (-1,)
         tx_arrays_factors = tx_arrays_factors.reshape(new_shape)
+        
 
         steering_matrices = np.matmul(rx_arrays_factors[..., :, None], tx_arrays_factors[..., None, :].transpose(1,0,3,2,4,5))
-
-
+        
         diffuses = rng.normal(0,1, size=steering_matrices.shape) + 1j * rng.normal(0,1, size=steering_matrices.shape)
-
+        
         H_nlos = np.sqrt(rx_R_matrices) @ diffuses @ np.sqrt(tx_R_matrices.transpose(1,0,3,2,4,5))
 
         los_coeffs  = np.sqrt(K_coeffs[..., None, None, None, None] / (K_coeffs[..., None, None, None, None] + 1))
         nlos_coeffs = np.sqrt(1 / (K_coeffs[..., None, None, None, None] + 1))
 
+
         H_coeffs = np.sqrt(ls_gain_coeffs[..., None, None] / 2) * (
             los_coeffs * steering_matrices + nlos_coeffs * H_nlos
             )
+
+        
 
         return H_coeffs
 

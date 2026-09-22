@@ -23,6 +23,7 @@ class MethodLoader:
         loaded = {}
         for name in names:
             path = parameters[f"{name}_module_path"]
+            print(path)
             class_name = parameters[f"{name}_method_class"]
             loaded[name] = cls.load(path, class_name)
         return loaded

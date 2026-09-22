@@ -314,13 +314,12 @@ class ScenarioReader:
             ul_max_power = self.sn_config.terminal_max_power,
             noise_var = self.sn_config.noise_variance
         )
-
+        
         from source.utils import lin2db
 
         # All APs serve all UEs
         L = self.sn_config.num_stations * self.sn_config.num_arrays
         clustering_matrix = np.ones((self.sn_config.num_terminals, L))
-
 
         # SN computing the uplink combiners
         sn_ul_combiners = self._signal_processor.compute_uplink_combiners(
@@ -358,8 +357,7 @@ class ScenarioReader:
         return (
             sn_ul_caused_inr_by_all_ues, 
             len(scheduled_ues), 
-            np.sum(sn_ul_spec_effs) 
-
+            sn_ul_spec_effs
             )
         
       

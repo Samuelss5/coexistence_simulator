@@ -11,6 +11,9 @@ common_parameters:
 Fixed_service:
 
   ### COORDINATES / POSITIONING ###
+  
+  snapshot_runner_module_path: "source/RunSnapshots.py"
+  snapshot_runner_method_class: "RunFixedServiceSnapshots"
 
   terminal_deployment_module_path: 'source/geometry/coordinates.py'
   terminal_deployment_method_class: 'RegularGridDeployment'
@@ -92,6 +95,9 @@ Fixed_service:
 Dmimo_network:
 
   inter_sight_distance: 350
+  
+  snapshot_runner_module_path: "source/RunSnapshots.py"
+  snapshot_runner_method_class: "RunDMimoSnapshots"
 
   terminal_deployment_module_path: 'source/geometry/coordinates.py'
   terminal_deployment_method_class: 'UMa3gppTerminalsDeployment'
@@ -134,9 +140,6 @@ Dmimo_network:
   stations_beamforming_method_class: 'DMimoCentralizedMmseBeamforming'
 
 
-  terminal_panel_selection_module_path: 'source/panel_selection.py'
-  terminal_panel_selection_method_class: 'TerminalPanelSelectionAltruistic'
-
   ### === CLUSTERING === ###
 
   stations_clustering_module_path: 'source/clustering.py'
@@ -148,25 +151,25 @@ Dmimo_network:
 
   station_sectorization_module_path: 'source/geometry/sectorization.py'
   station_sectorization_method_class: 'UniformSectorization'
+  
+  terminal_panel_selection_module_path: 'source/panel_selection.py'
+  terminal_panel_selection_method_class: 'TerminalPanelSelectionAltruistic'
 
   terminal_scheduling_module_path: 'source/scheduling.py'
   terminal_scheduling_method_class: 'IndividualEstimated_INR'
 
 
-  num_terminals: 4
-  num_stations: 4
+  num_terminals: 15
+  num_stations: 16
 
   num_panels: 4
   num_arrays: 3
 
-  N_h_terminals: 1
-  N_v_terminals: 1
-
   panel_N_h: 1
   panel_N_v: 1
 
-  array_N_h: 1
-  array_N_v: 1
+  array_N_h: 4
+  array_N_v: 2
 
   terminals_max_power: 0.1
   stations_max_power: 0.1
@@ -184,9 +187,10 @@ Dmimo_network:
 
   carrier_frequency: 7.75e+9
 
-  num_pilot_sequences: 10
+  num_pilot_sequences: 20
 
 
-num_snapshots: 20
+num_parallel_sims: 10
+num_snapshots: 100
 
 

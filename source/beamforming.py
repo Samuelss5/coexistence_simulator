@@ -20,13 +20,9 @@ class DMimoCentralizedMmseCombining:
 
         LNs = L * Ns
 
-        # Power allocation
-        transmit_powers_vec = np.zeros(K, dtype=float)
-        transmit_powers_vec[scheduled_ues] = ul_max_power
-        
         D_matrixes = np.zeros((K, LNs, LNs), dtype = np.complex128)
-
-        for ue_k in range(K):
+        
+        for ue_k in scheduled_ues:
             D_k = []
             for ap_l in range(L):
                 if clustering_matrix[ue_k, ap_l] == 0:
@@ -39,51 +35,44 @@ class DMimoCentralizedMmseCombining:
         
         # Pre-compute all concatenated channels
         H_concatenated = np.zeros((K, LNs, Nt), dtype=np.complex128)
-
-        for ue_j in range(K):
-            if transmit_powers_vec[ue_j] > 10**-6:  # Only compute for UEs with non-negligible power
-
-                H_concatenated[ue_j] = np.concatenate(
-                    H_hat_coeffs[:, ue_j, :, :], axis=0
+        
+        print("H_hat shape: ", H_hat_coeffs.shape)
+        
+        for ue_k in scheduled_ues:
+            H_concatenated[ue_k] = np.concatenate(
+                    H_hat_coeffs[:, ue_k, :, :], axis=0
                 )
-            else:
-                pass
 
-
+    
         C_block = np.zeros((K, LNs, LNs), dtype=np.complex128)
-
-        for ue_k in range(K):
-            if transmit_powers_vec[ue_k] > 10e-6:
-                C_list = [C_error_matrices[ue_k, ap_l] for sp_l in range(L)]
-                C_block[ue_k] = block_diag(*C_list)
+        for ue_k in scheduled_ues:
+            C_list = [C_error_matrices[ue_k, ap_l] for ap_l in range(L)]
+            C_block[ue_k] = block_diag(*C_list)
 
 
         Noise_eye = np.eye(LNs, dtype=np.complex128) * noise_var
 
 
-
         combining_vecs = np.zeros((K,LNs, Nt), dtype=np.complex128)
 
-        for ue_k in range(K):
-            if transmit_powers_vec[ue_k] > 10e-6:
+        for ue_k in scheduled_ues:
 
-                Q_k = np.zeros((LNs, LNs), dtype=np.complex128)
+            Q_k = np.zeros((LNs, LNs), dtype=np.complex128)
 
-                D_k = D_matrixes[ue_k]
+            D_k = D_matrixes[ue_k]
 
-                for ue_j in range(K):
-                    if transmit_powers_vec[ue_j] > 10e-6:
-                        HH = H_concatenated[ue_j] @ H_concatenated[ue_j].T.conj()
-                        Q_k += transmit_powers_vec[ue_j] * D_k @ (HH + C_block[ue_j]) @ D_k
+            for ue_j in scheduled_ues:
+                
+                HH = H_concatenated[ue_j] @ H_concatenated[ue_j].T.conj()
+                Q_k += ul_max_power * D_k @ (HH + C_block[ue_j]) @ D_k
         
-                Q_k += Noise_eye
+            Q_k += Noise_eye
 
-                H_k = H_concatenated[ue_k]
-                V_k = transmit_powers_vec[ue_k] * solve(Q_k, D_k @ H_k)
-                combining_vecs[ue_k] = V_k
-            else:
-                combining_vecs[ue_k] = np.zeros((LNs, Nt), dtype=np.complex128)
-
+            H_k = H_concatenated[ue_k]
+            V_k = ul_max_power * np.linalg.pinv(Q_k) @ D_k @ H_k
+            #V_k = ul_max_power * solve(Q_k, D_k @ H_k)
+            combining_vecs[ue_k] = V_k
+           
         return combining_vecs
 
 

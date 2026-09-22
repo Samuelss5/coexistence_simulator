@@ -14,23 +14,30 @@ class InterNetInterf:
     # Uplink to Downlink
     @classmethod
     def uplink_to_downlink(cls,
-        channel_tensor,):
+        channel_tensor,
+        sched_term,
+        term_sel_panels,
+        max_ul_p: float):
 
-        num_receivers, num_transmitters, _, _ = channel_tensor.shape
+        print(channel_tensor.shape)
 
+        num_receivers, num_transmitters, _, _, _, _ = channel_tensor.shape
+        
         received_interference = np.zeros(num_receivers, dtype=float)
 
         for rx_j in range(num_receivers):
             
             interf_j = 0.0
 
-            for tx_k in range(num_transmitters):
+            for tx_k in sched_term:
+                
+                sp_k = term_sel_panels[tx_k]
 
-                h = channel_tensor[rx_j, tx_k]
+                h = channel_tensor[rx_j, tx_k, :, sp_k]
+                
+                interf_j += np.sqrt(max_ul_p) * h
 
-                interf_j += np.linalg.norm(h)**2
-
-            received_interference[rx_j] = interf_j
+            received_interference[rx_j] = np.linalg.norm(interf_j)**2
 
 
         return received_interference
@@ -110,123 +117,24 @@ class InterNetInterfForDMimo:
         
 
             intf_k = 0+0j
+            
+            
 
             for int_j in range(I):
 
                 h_j = np.concatenate(
                     h_ul[:, int_j, ...], axis = 0
                 )
-
+            
                 intf_k += np.sqrt(max_dl_power) * (v_k.T.conj() @ d_k @ h_j)
-
+            
 
             if np.isscalar(intf_k) or np.ndim(intf_k) == 0:
                 interference_signals[ue_k] = 0.0
             else:
-                interference_signals[ue_k] = np.linalg.norm(intf_k, 2)
+                interference_signals[ue_k] = np.linalg.norm(intf_k)**2
         
         return interference_signals
-
-class DownlinkToDMimoUplinkInterference:
-
-    """ A interferência que a rede Dmimo, em UL, sofre quando a outra está em DL """
-
-    # The 
-    # The cell-free network is the secondary -> 
-
-
-    # This function is unique, given that when a cell-free network is in uplink, it uses joint and centralized combining techniques at the APs; 
-    # therefore, a different notation is required.
-
-
-    # 1. In a cell-free network we refer to the terminals as UEs and to the stations as APs
-
-    @classmethod
-    def compute(
-        cls, 
-        channel_tensor,
-        clustering_matrix,
-        scheduled_ues,
-        combining_vectors,
-        max_dl_power
-        ):
-
-        # 1. H is the channel matrix between the APs and the interferer that is in DL
-
-
-        # Given that the APs in the cell-free network are the ones experiencing interference 
-        # while they are in the uplink, it is expected that the dimensions of the H matrix will reflect this
-
-
-        # OBS: All DL interferers transmit with maximum power
-
-
-        h_dense = np.array(channel_tensor.tolist())
-
-        I, S, P, A, Ni, Ns = h_dense.shape
-        L = S * A
-        LNs = L * Ns
-
-        h_trans = h_dense.transpose(1,3,0,2,5,4)
-
-        
-        h_ul = h_trans.reshape(L, I, P, Ns, Ni)
-
-        h_ul = h_ul.reshape(L, I * P, Ns, Ni)
-
-
-        # K = number of UEs
-        K = combining_vectors.shape[0]
-
-        # S  = number of APs (stations)
-        # I  = number of interferers in DL
-        # A  = number of arrays per AP
-        # P  = number of panels per interferer 
-        # Ns = number of antennas at each AP array
-        # Ni = number of antennas at each DL interferer
-
-       
-
-        # Concatenated channels between the DL interferers and all APs of the cell-free network
-
-
-        interference_signals = np.zeros(K, dtype=float)
-
-        for ue_k in scheduled_ues:
-
-            # Each UE from the cell-free will have a sense of the interference coming from the other network
-
-            v_k = combining_vectors[ue_k]
-
-            d_k = []
-            for ap_l in range(L):
-                if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(Ns))
-                else:
-                    d_k.append(np.zeros((Ns,Ns)))
-
-            d_k = block_diag(*d_k)
-        
-
-            intf_k = 0+0j
-
-            for int_j in range(I):
-
-                h_j = np.concatenate(
-                    h_ul[:, int_j, ...], axis = 0
-                )
-
-                intf_k += np.sqrt(max_dl_power) * (v_k.T.conj() @ d_k @ h_j)
-
-
-            if np.isscalar(intf_k) or np.ndim(intf_k) == 0:
-                interference_signals[ue_k] = 0.0
-            else:
-                interference_signals[ue_k] = np.linalg.norm(intf_k, 2)
-        
-        return interference_signals
-             
-
 
 
 class DMimoInternalSignals:
@@ -285,9 +193,7 @@ class DMimoInternalSignals:
                 h_ul[:, ue_k], axis = 0
             )
 
-            target_signals[ue_k] = np.linalg.norm(
-                np.sqrt(max_ul_power) * (v_k.T.conj() @ d_k @ h_k)
-            )**2
+            target_signals[ue_k] = max_ul_power * np.linalg.norm( (v_k.T.conj() @ d_k @ h_k))**2
 
         return target_signals
 
@@ -344,11 +250,13 @@ class DMimoInternalSignals:
                 if ue_j != ue_k:
 
                     h_j = np.concatenate(
-                        h_ul[:, ue_k], axis = 0
+                        h_ul[:, ue_j], axis = 0
                     )
 
                     intf_k += np.sqrt(max_ul_power) * (v_k.T.conj() @ d_k @ h_j)
-
+            
+            print("intf_k: ", intf_k)
+                    
             if np.isscalar(intf_k) or np.ndim(intf_k) == 0:
                 interference_signals[ue_k] = 0.0
             else:
@@ -374,7 +282,7 @@ class DMimoInternalSignals:
 
         n = rng.normal(size=(LNs,1)) + 1j * rng.normal(size=(LNs,1)) 
         n = n * np.sqrt(0.5 * noise_variance)
-
+        
         for ue_k in scheduled_ues:
 
             d_k = []

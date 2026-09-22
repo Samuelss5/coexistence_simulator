@@ -8,7 +8,7 @@ import multiprocessing as mp
 
 import os
 
-mp.set_start_method('fork')
+#mp.set_start_method('fork')
 
 from pathlib import Path
 
@@ -54,9 +54,6 @@ class RunFixedServiceSnapshots:
         receivers_coords = np.empty(num_receivers, dtype=object)
         receivers_coords[0] = (0, 0, receiver_height)
 
-        #print("receivers")
-        #print(receivers_coords)
-
         # The FS transmitter position is equal for every single snapshot
         transmitters_coords = np.empty(num_transmitters, dtype=object)
         transmitters_coords[0] = (10e3, 0, transmitter_height)
@@ -86,7 +83,6 @@ class RunFixedServiceSnapshots:
 
         for ite in range(num_snapshots):
 
-            #print('Fixed Service snapshot ' + str(ite))
             receivers_coords_for_all_snapshots[ite]    = receivers_coords
             transmitters_coords_for_all_snapshots[ite] = transmitters_coords 
 
@@ -178,7 +174,7 @@ class RunDMimoSnapshots:
             )
             ues_boresights_for_all_snapshots[ite] = ues_boresights
 
-            # 1. Generating APs panels boresights
+            # 2. Generating APs panels boresights
             aps_boresights = self.config.methods["station_sectorization"].compute(
                 self.config.num_stations, self.config.num_arrays, self.config.station_downtilt
             )
@@ -334,8 +330,6 @@ class RunDMimoSnapshots:
             self.config.num_panels, 
             self.config.num_arrays
         )
-
-        print("tensor shape: ", tensor_shape)
 
         for ite in range(num_snapshots):
 
@@ -586,7 +580,7 @@ class RunDMimoSnapshots:
         
 
 
-    def run(self, num_snapshots: int, rng: np.random.Generator):
+    def run(self, num_snapshots: int, rng: np.random.Generator, task_id: int):
 
 
         num_ues = self.config.num_terminals
@@ -638,8 +632,6 @@ class RunDMimoSnapshots:
             num_snapshots
         )
 
-        print(aps_R_matrices_for_all_snapshots)
-
         # 6. Computing the large scale fading coefficients for all snapshots
         (
         ls_fading_coeffs_for_all_snapshots,
@@ -669,13 +661,13 @@ class RunDMimoSnapshots:
         basic_path = dir_path + '/scenarios_storage/DMimo/'
         
 
-        np.savez(basic_path + 'lsg_parameters/lsg_coeffs_full.npz', lsg_coeffs = ls_gain_coeffs_for_all_snapshots)
-        np.savez(basic_path + 'lsg_parameters/K_coeffs_full.npz',   K_coeffs   = K_coeffs_for_all_snapshots)
+        np.savez(basic_path + 'lsg_parameters/lsg_coeffs_for_all_snapshots_' + str(task_id) + ".npz", lsg_coeffs = ls_gain_coeffs_for_all_snapshots)
+        np.savez(basic_path + 'lsg_parameters/K_coeffs_for_all_snapshots_' + str(task_id) + ".npz",   K_coeffs   = K_coeffs_for_all_snapshots)
 
-        np.savez(basic_path + 'R_matrices/ues_R_matrices_full.npz', ues_R_matrices = ues_R_matrices_for_all_snapshots)
-        np.savez(basic_path + 'R_matrices/aps_R_matrices_full.npz', aps_R_matrices = aps_R_matrices_for_all_snapshots)
+        np.savez(basic_path + 'R_matrices/ues_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", ues_R_matrices = ues_R_matrices_for_all_snapshots)
+        np.savez(basic_path + 'R_matrices/aps_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", aps_R_matrices = aps_R_matrices_for_all_snapshots)
 
-        np.savez(basic_path + 'H_coeffs/H_coeffs_full.npz', H_coeffs = H_coeffs_for_all_snapshots)
+        np.savez(basic_path + 'H_coeffs/H_coeffs_for_all_snapshots_' + str(task_id) + ".npz", H_coeffs = H_coeffs_for_all_snapshots)
 
 
         return (ues_coords_for_all_snapshots, 
@@ -938,7 +930,7 @@ class InterNetworkLinksBuilder:
 
 
 
-    def compute_large_scale_coeffs(self, rng):
+    def compute_large_scale_coeffs(self, rng, task_id):
 
         pn_term_coords = self.pn_geom.terminals_coords
         pn_stat_coords  = self.pn_geom.stations_coords
@@ -1029,23 +1021,45 @@ class InterNetworkLinksBuilder:
         self.pn_stat_sn_stat_K_for_all_snapshots         = stat_stat_K_for_all_snapshots
 
 
-        self._save_lsf_coeffs()
+        self._save_lsf_coeffs(task_id)
 
 
-    def _save_lsf_coeffs(self):
-        path = dir_path + '/scenarios_storage/InterNetwork/lsg_parameters/'
+    def _save_lsf_coeffs(self, task_id):
+
+        # PN terminal <-> SN terminal
+
+        lsf_path = dir_path + '/scenarios_storage/InterNetwork/lsg_parameters/ls_fading/'
+        lsg_path = dir_path + '/scenarios_storage/InterNetwork/lsg_parameters/ls_gain/'
+        K_path = dir_path + '/scenarios_storage/InterNetwork/lsg_parameters/K_facts/'
  
-        save_npz(path, 'pn_term_sn_term_ls_fading_full.npz', pn_term_sn_term_ls_fading=self.pn_term_sn_term_ls_fading_for_all_snapshots)
-        save_npz(path, 'pn_term_sn_term_ls_gain_full.npz',   pn_term_sn_term_ls_gain=self.pn_term_sn_term_ls_gain_for_all_snapshots)
-        save_npz(path, 'pn_term_sn_term_K_full.npz',         pn_term_sn_term_K=self.pn_term_sn_term_K_for_all_snapshots)
+        save_npz(lsf_path, 'pn_term_sn_term_ls_fading_for_all_snapshots_' + str(task_id) + '.npz', 
+                 pn_term_sn_term_ls_fading=self.pn_term_sn_term_ls_fading_for_all_snapshots)
+        
+        save_npz(lsg_path, 'pn_term_sn_term_ls_gain_for_all_snapshots_' + str(task_id) + '.npz',   
+                 pn_term_sn_term_ls_gain=self.pn_term_sn_term_ls_gain_for_all_snapshots)
+        
+        save_npz(K_path, 'pn_term_sn_term_K_for_all_snapshots_' + str(task_id) + '.npz',         
+                 pn_term_sn_term_K=self.pn_term_sn_term_K_for_all_snapshots)
+
  
-        save_npz(path, 'pn_term_sn_stat_ls_fading_full.npz', pn_term_sn_stat_ls_fading=self.pn_term_sn_stat_ls_fading_for_all_snapshots)
-        save_npz(path, 'pn_term_sn_stat_ls_gain_full.npz',   pn_term_sn_stat_ls_gain=self.pn_term_sn_stat_ls_gain_for_all_snapshots)
-        save_npz(path, 'pn_term_sn_stat_K_full.npz',         pn_term_sn_stat_K=self.pn_term_sn_stat_K_for_all_snapshots)
+        save_npz(lsf_path, 'pn_term_sn_stat_ls_fading_for_all_snapshots_' + str(task_id) + '.npz', 
+                 pn_term_sn_stat_ls_fading=self.pn_term_sn_stat_ls_fading_for_all_snapshots)
+        
+        save_npz(lsg_path, 'pn_term_sn_stat_ls_gain_for_all_snapshots_' + str(task_id) + '.npz',   
+                 pn_term_sn_stat_ls_gain=self.pn_term_sn_stat_ls_gain_for_all_snapshots)
+        
+        save_npz(K_path, 'pn_term_sn_stat_K_for_all_snapshots_' + str(task_id) + '.npz',         
+                 pn_term_sn_stat_K=self.pn_term_sn_stat_K_for_all_snapshots)
+
  
-        save_npz(path, 'pn_stat_sn_stat_ls_fading_full.npz', pn_stat_sn_stat_ls_fading=self.pn_stat_sn_stat_ls_fading_for_all_snapshots)
-        save_npz(path, 'pn_stat_sn_stat_ls_gain_full.npz',   pn_stat_sn_stat_ls_gain=self.pn_stat_sn_stat_ls_gain_for_all_snapshots)
-        save_npz(path, 'pn_stat_sn_stat_K_full.npz',         pn_stat_sn_stat_K=self.pn_stat_sn_stat_K_for_all_snapshots)
+        save_npz(lsf_path, 'pn_stat_sn_stat_ls_fading_for_all_snapshots_' + str(task_id) + '.npz', 
+                 pn_stat_sn_stat_ls_fading=self.pn_stat_sn_stat_ls_fading_for_all_snapshots)
+        
+        save_npz(lsg_path, 'pn_stat_sn_stat_ls_gain_for_all_snapshots_' + str(task_id) + '.npz',   
+                 pn_stat_sn_stat_ls_gain=self.pn_stat_sn_stat_ls_gain_for_all_snapshots)
+        
+        save_npz(K_path, 'pn_stat_sn_stat_K_for_all_snapshots_' + str(task_id) + '.npz',         
+                 pn_stat_sn_stat_K=self.pn_stat_sn_stat_K_for_all_snapshots)
 
 
     def _R(self, r_doas, N_a, N_b):
@@ -1105,7 +1119,7 @@ class InterNetworkLinksBuilder:
      
             return R_matrices
 
-    def compute_R_matrices(self):
+    def compute_R_matrices(self, task_id):
 
         """
         
@@ -1147,25 +1161,19 @@ class InterNetworkLinksBuilder:
 
 
         ### OBS: SN stations (APs) and the PN terminals (FS rx) are fixed, the R matrices don't change
-
         pn_term_sn_stat_R = self._R(self.pn_term_to_sn_stat_r_doas_for_all_snapshots[0], pn_panel_N_v, pn_panel_N_v)
-
         sn_stat_pn_term_R = self._R(self.sn_stat_to_pn_term_r_doas_for_all_snapshots[0], sn_array_N_h, sn_array_N_v)
 
 
         ### OBS: SN stations (APs) and the PN stations (FS tx) are fixed, the R matrices don't change
-
         pn_stat_sn_stat_R = self._R(self.pn_stat_to_sn_stat_r_doas_for_all_snapshots[0], pn_array_N_h, pn_array_N_v)
-
         sn_stat_pn_stat_R = self._R(self.sn_stat_to_pn_stat_r_doas_for_all_snapshots[0], sn_array_N_h, sn_array_N_v)
 
 
         for ite in range(self.num_snapshots):
 
-            # Links between PN terminals and SN terminals
-
+            # PN terminals <-> SN terminals
             pn_term_sn_term_R = self._R(self.pn_term_to_sn_term_r_doas_for_all_snapshots[ite], pn_panel_N_v, pn_panel_N_v)
-
             sn_term_pn_term_R = self._R(self.sn_term_to_pn_term_r_doas_for_all_snapshots[ite], sn_panel_N_h, sn_panel_N_v)
 
             pn_term_sn_term_R_matrices_for_all_snapshots[ite] = pn_term_sn_term_R
@@ -1191,21 +1199,36 @@ class InterNetworkLinksBuilder:
         self.sn_stat_to_pn_stat_R_matrices_for_all_snapshots = sn_stat_pn_stat_R_matrices_for_all_snapshots
 
 
+        self._save_R_matrices(task_id)
 
 
-
-    def _save_R_matrices(self):
+    def _save_R_matrices(self, task_id):
+    
+        """
+        This function is used to save npz files containing the spatial correlation matrices
+        """
 
         path = dir_path + '/scenarios_storage/InterNetwork/R_matrices/'
+        
+        # Inputs: file_path, file_name, identification
 
-        save_npz(path + 'pn_term_sn_term_R_matrices_full', pn_term_sn_term_R_matrices = self.pn_term_to_sn_term_R_matrices_full)
-        save_npz(path + 'sn_term_pn_term_R_matrices_full', sn_term_pn_term_R_matrices = self.sn_term_to_pn_term_R_matrices_full)
+        save_npz(path, 'pn_term_sn_term_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", 
+                 pn_term_sn_term_R_matrices = self.pn_term_to_sn_term_R_matrices_for_all_snapshots)
+        
+        save_npz(path, 'sn_term_pn_term_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", 
+                 sn_term_pn_term_R_matrices = self.sn_term_to_pn_term_R_matrices_for_all_snapshots)
 
-        save_npz(path + 'pn_term_sn_stat_R_matrices_full', pn_term_sn_stat_R_matrices = self.pn_term_to_sn_stat_R_matrices_full)
-        save_npz(path + 'sn_stat_pn_term_R_matrices_full', sn_stat_pn_term_R_matrices = self.sn_stat_to_pn_term_R_matrices_full)
+        save_npz(path, 'pn_term_sn_stat_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", 
+                 pn_term_sn_stat_R_matrices = self.pn_term_to_sn_stat_R_matrices_for_all_snapshots)
+        
+        save_npz(path, 'sn_stat_pn_term_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", 
+                 sn_stat_pn_term_R_matrices = self.sn_stat_to_pn_term_R_matrices_for_all_snapshots)
 
-        save_npz(path + 'pn_stat_sn_stat_R_matrices_full', pn_stat_sn_stat_R_matrices = self.pn_stat_to_sn_stat_R_matrices_full)
-        save_npz(path + 'sn_stat_pn_stat_R_matrices_full', sn_stat_pn_stat_R_matrices = self.sn_stat_to_pn_stat_R_matrices_full)
+        save_npz(path, 'pn_stat_sn_stat_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", 
+                 pn_stat_sn_stat_R_matrices = self.pn_stat_to_sn_stat_R_matrices_for_all_snapshots)
+        
+        save_npz(path, 'sn_stat_pn_stat_R_matrices_for_all_snapshots_' + str(task_id) + ".npz", 
+                 sn_stat_pn_stat_R_matrices = self.sn_stat_to_pn_stat_R_matrices_for_all_snapshots)
 
 
 
@@ -1213,7 +1236,7 @@ class InterNetworkLinksBuilder:
                            rx_doas_for_all_snapshots, tx_doas_for_all_snapshots, rx_N, tx_N, rng):
         return self.pn_conf.methods["channel_model"].generate_multiple_channels(
             ls_gain_coeffs=ls_gain_for_all_snapshots[ite],
-            K_coeffs=K_for_all_snapshots[ite][:, :, np.newaxis, np.newaxis],
+            K_coeffs=K_for_all_snapshots[ite],
             rx_R_matrices=rx_R_for_all_snapshots[ite],
             tx_R_matrices=tx_R_for_all_snapshots[ite],
             rx_doas=(rx_doas_for_all_snapshots[ite][0], rx_doas_for_all_snapshots[ite][1]),
@@ -1225,7 +1248,7 @@ class InterNetworkLinksBuilder:
 
 
 
-    def generate_channels(self, rng):
+    def generate_channels(self, rng, task_id):
 
         """
         
@@ -1269,12 +1292,16 @@ class InterNetworkLinksBuilder:
         
         for ite in range(n):
  
-            term_term_H[ite] = self._generate_channel(
+            term_term_H[ite] 
+
+            h = self._generate_channel(
                 ite, self.pn_term_sn_term_ls_gain_for_all_snapshots, self.pn_term_sn_term_K_for_all_snapshots,
                 self.pn_term_to_sn_term_R_matrices_for_all_snapshots, self.sn_term_to_pn_term_R_matrices_for_all_snapshots,
                 self.pn_term_to_sn_term_r_doas_for_all_snapshots, self.sn_term_to_pn_term_r_doas_for_all_snapshots,
                 pn_pan_N, sn_pan_N, rng
             )
+
+            term_term_H[ite] = h
  
             term_stat_H[ite] = self._generate_channel(
                 ite, self.pn_term_sn_stat_ls_gain_for_all_snapshots, self.pn_term_sn_stat_K_for_all_snapshots,
@@ -1294,13 +1321,17 @@ class InterNetworkLinksBuilder:
         self.pn_term_sn_stat_H_for_all_snapshots = term_stat_H
         self.pn_stat_sn_stat_H_for_all_snapshots = stat_stat_H
  
-        self._save_channels()
+        self._save_channels(task_id)
  
-    def _save_channels(self):
+    def _save_channels(self, task_id):
         path = dir_path + '/scenarios_storage/InterNetwork/H_coeffs/'
+
+        file1 = "pn_term_sn_term_H_for_all_snapshots_" + str(task_id) + ".npz"
+        file2 = "pn_term_sn_stat_H_for_all_snapshots_" + str(task_id) + ".npz"
+        file3 = "pn_stat_sn_stat_H_for_all_snapshots_" + str(task_id) + ".npz"
  
-        save_npz(path, 'pn_term_sn_term_H_full.npz', pn_term_sn_term_H=self.pn_term_sn_term_H_for_all_snapshots)
-        save_npz(path, 'pn_term_sn_stat_H_full.npz', pn_term_sn_stat_H=self.pn_term_sn_stat_H_for_all_snapshots)
-        save_npz(path, 'pn_stat_sn_stat_H_full.npz', pn_stat_sn_stat_H=self.pn_stat_sn_stat_H_for_all_snapshots)
+        save_npz(path, file1, pn_term_sn_term_H=self.pn_term_sn_term_H_for_all_snapshots)
+        save_npz(path, file2, pn_term_sn_stat_H=self.pn_term_sn_stat_H_for_all_snapshots)
+        save_npz(path, file3, pn_stat_sn_stat_H=self.pn_stat_sn_stat_H_for_all_snapshots)
 
 
