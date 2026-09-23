@@ -16,65 +16,68 @@ class DMimoCentralizedMmseCombining:
         # K = number of user equipments (UEs)
         # Ns = number of antennas at each AP panel/array
         # Nt = number of antennas at each UE panel/array
-        L, K, Ns, Nt = H_hat_coeffs.shape
-
-        LNs = L * Ns
-
-        D_matrixes = np.zeros((K, LNs, LNs), dtype = np.complex128)
         
-        for ue_k in scheduled_ues:
-            D_k = []
-            for ap_l in range(L):
-                if clustering_matrix[ue_k, ap_l] == 0:
-                    D_k.append(np.eye(Ns) * 0)
-                elif clustering_matrix[ue_k, ap_l] == 1:
-                    D_k.append(np.eye(Ns))
-
-            D_k = block_diag(*D_k)
-            D_matrixes[ue_k] = D_k
+        (
+        n_ap_array,
+        n_ue,
+        n_elem_array,
+        n_elem_panel
+        ) = H_hat_coeffs.shape
         
-        # Pre-compute all concatenated channels
-        H_concatenated = np.zeros((K, LNs, Nt), dtype=np.complex128)
+        n_elem_ap_array = n_ap_array * n_elem_array
         
-        print("H_hat shape: ", H_hat_coeffs.shape)
+        diag_n_elem_array = np.eye(n_elem_array)
         
-        for ue_k in scheduled_ues:
-            H_concatenated[ue_k] = np.concatenate(
-                    H_hat_coeffs[:, ue_k, :, :], axis=0
-                )
-
+        h_conc = np.zeros((n_ue, n_elem_ap_array, n_elem_panel), dtype=np.complex128)
+        
+        d_matrices = np.zeros(n_ue, dtype=np.ndarray)
+        
+        c_error_matrices = np.zeros(n_ue, dtype=np.ndarray)
+        
+        for ue_id in scheduled_ues:
+        
+            ue_clustering_vec = clustering_matrix[ue_id]
+            d_ue = np.kron(np.diag(ue_clustering_vec), diag_n_elem_array)
+            
+            d_matrices[ue_id] = d_ue
+            
+            c_list = [C_error_matrices[ue_id, ap_id] for ap_id in range(n_ap_array)]
+            
+            c_error_matrices[ue_id] = block_diag(*c_list)
+            
+            h_conc[ue_id] = np.concatenate( H_hat_coeffs[:, ue_id], axis=0 )
+            
     
-        C_block = np.zeros((K, LNs, LNs), dtype=np.complex128)
-        for ue_k in scheduled_ues:
-            C_list = [C_error_matrices[ue_k, ap_l] for ap_l in range(L)]
-            C_block[ue_k] = block_diag(*C_list)
-
-
-        Noise_eye = np.eye(LNs, dtype=np.complex128) * noise_var
-
-
-        combining_vecs = np.zeros((K,LNs, Nt), dtype=np.complex128)
-
-        for ue_k in scheduled_ues:
-
-            Q_k = np.zeros((LNs, LNs), dtype=np.complex128)
-
-            D_k = D_matrixes[ue_k]
-
-            for ue_j in scheduled_ues:
-                
-                HH = H_concatenated[ue_j] @ H_concatenated[ue_j].T.conj()
-                Q_k += ul_max_power * D_k @ (HH + C_block[ue_j]) @ D_k
         
-            Q_k += Noise_eye
+        eyeN = np.eye(n_elem_ap_array) * noise_var
 
-            H_k = H_concatenated[ue_k]
-            V_k = ul_max_power * np.linalg.pinv(Q_k) @ D_k @ H_k
-            #V_k = ul_max_power * solve(Q_k, D_k @ H_k)
-            combining_vecs[ue_k] = V_k
-           
+
+        combining_vecs = np.zeros((n_ue, n_elem_ap_array, n_elem_panel), dtype=np.complex128)
+        
+        
+        for victim_id in scheduled_ues:
+        
+            q_victim = np.zeros((n_elem_ap_array, n_elem_ap_array), dtype=np.complex128)
+            
+            d_victim = d_matrices[victim_id]
+            
+            for interferer_id in scheduled_ues:
+                
+                hh = h_conc[interferer_id] @ h_conc[interferer_id].T.conj()
+                
+                q_victim += ul_max_power * d_victim @ (hh ) @ d_victim
+                
+            q_victim += eyeN
+            
+            victim_combiner = ul_max_power * np.linalg.inv(q_victim) @ d_victim @ h_conc[victim_id]
+        
+            combining_vecs[victim_id] = victim_combiner
+            
+            combining_vecs[victim_id] = h_conc[victim_id]
+            
+            
         return combining_vecs
-
+            
 
 class DMimoCentralizedMmseBeamforming:
 

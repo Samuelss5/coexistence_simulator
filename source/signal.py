@@ -3,6 +3,16 @@ import numpy as np
 from scipy.linalg import block_diag
 
 
+def check_signal_type(signal):
+
+    answer = None
+    if np.isscalar(signal) or np.ndim(signal) == 0:
+        answer = 0.0
+    else:
+        answer = np.linalg.norm(signal)**2
+        
+    return answer
+
 
 class InterNetInterf:
 
@@ -152,48 +162,53 @@ class DMimoInternalSignals:
         scheduled_ues,
         ues_panels,
         combining_vectors,
-        max_ul_power
+        ul_max_power
     ):
-
+        
         h_dense = np.array(channel_tensor.tolist())
-
-        # Dimensions according to the mathematic notation
-        num_ues, num_aps, num_pan, num_arr, N_pan, N_arr = h_dense.shape
-        num_aps_arr = num_aps * num_arr
-
+    
+        (
+        n_ue,
+        n_ap,
+        n_panel_per_ue,
+        n_array_per_ap,
+        n_elem_panel,
+        n_elem_array
+        ) = h_dense.shape
+        
+        
+        n_ap_array = n_ap * n_array_per_ap
+        
         # Uplink channel tensor
-        h_ul = np.zeros((num_aps_arr, num_ues, N_arr, N_pan), dtype=np.complex128)
+        h_ul = np.zeros((n_ue, n_ap_array, n_elem_array, n_elem_panel), dtype=np.complex128)
 
-        for ue_k in scheduled_ues:
-            sp_k = ues_panels[ue_k]
+        for ue_id in scheduled_ues:
+        
+            panel_id = ues_panels[ue_id]
 
-            # shape -> (num_aps, num_arr, N_pan, N_arr)
-            h_k = h_dense[ue_k, :, sp_k]
-            h_k = h_k.transpose(0, 1, 3, 2)
-            h_k = h_k.reshape(num_aps_arr, N_arr, N_pan)
+            # shape -> (n_ap, n_array_per_ap, n_elem_array, n_elem_panel)
+            h_ue = h_dense[ue_id, :, panel_id]
+            h_ue = h_ue.transpose(0, 1, 3, 2)
+            h_ue = h_ue.reshape(n_ap_array, n_elem_array, n_elem_panel)
 
-            h_ul[:, ue_k] = h_k
+            h_ul[ue_id] = h_ue
 
-        target_signals = np.zeros(num_ues, dtype=float) 
+        target_signals = np.zeros(n_ue, dtype=float) 
+        
+        diag_n_elem_array = np.eye(n_elem_array)
 
-        for ue_k in scheduled_ues:
+        for ue_id in scheduled_ues:
+        
+            ue_clustering_vec = clustering_matrix[ue_id]
+            d_ue = np.kron(np.diag(ue_clustering_vec), diag_n_elem_array)
             
-            d_k = []
-            for ap_l in range(num_aps_arr):
-                if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(N_arr))
-                else:
-                    d_k.append(np.zeros((N_arr, N_arr)))
+            ue_combiner = combining_vectors[ue_id]
             
-            d_k = block_diag(*d_k)
-
-            v_k = combining_vectors[ue_k]
-
-            h_k = np.concatenate(
-                h_ul[:, ue_k], axis = 0
-            )
-
-            target_signals[ue_k] = max_ul_power * np.linalg.norm( (v_k.T.conj() @ d_k @ h_k))**2
+            h_ue = np.concatenate( h_ul[ue_id], axis = 0 )
+            
+            x = h_ue - ue_combiner
+            
+            target_signals[ue_id] = ul_max_power * np.linalg.norm( ue_combiner.T.conj() @ d_ue @ h_ue )**2
 
         return target_signals
 
@@ -205,63 +220,65 @@ class DMimoInternalSignals:
         scheduled_ues,
         ues_panels,
         combining_vectors,
-        max_ul_power
+        ul_max_power
     ):
 
         h_dense = np.array(channel_tensor.tolist())
+        
+        # OBS: evite escrever variáveis que se diferenciam apenas pelo prefixo
+        
+        (
+        n_ue,
+        n_ap,
+        n_panel_per_ue,
+        n_array_per_ap,
+        n_elem_panel,
+        n_elem_array
+        ) = h_dense.shape
+        
+        n_ap_array = n_ap * n_array_per_ap
                 
-        # Dimensions according to the mathematic notation
-        num_ues, num_aps, num_pan, num_arr, N_pan, N_arr = h_dense.shape
-        num_aps_arr = num_aps * num_arr
 
         # Uplink channel tensor
-        h_ul = np.zeros((num_aps_arr, num_ues, N_arr, N_pan), dtype=np.complex128)
+        h_ul = np.zeros((n_ue, n_ap_array, n_elem_array, n_elem_panel), dtype=np.complex128)
 
-        for ue_k in scheduled_ues:
-            sp_k = ues_panels[ue_k]
+        for ue_id in scheduled_ues:
+        
+            panel_id = ues_panels[ue_id]
 
-            # shape -> (num_aps, num_arr, N_pan, N_arr)
-            h_k = h_dense[ue_k, :, sp_k]
-            h_k = h_k.transpose(0, 1, 3, 2)
-            h_k = h_k.reshape(num_aps_arr, N_arr, N_pan)
+            # shape -> (n_ap, n_array_per_ap, n_elem_array, n_elem_panel)
+            h_ue = h_dense[ue_id, :, panel_id]
+            h_ue = h_ue.transpose(0, 1, 3, 2)
+            h_ue = h_ue.reshape(n_ap_array, n_elem_array, n_elem_panel)
 
-            h_ul[:, ue_k] = h_k
+            h_ul[ue_id] = h_ue
         
 
         # vector that will store the desired signals power
-        interference_signals = np.zeros(num_ues, dtype=float)
-
-        for ue_k in scheduled_ues:
-
-            d_k = []
-            for ap_l in range(num_aps_arr):
-                if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(N_arr))
-                else:
-                    d_k.append(np.zeros((N_arr, N_arr)))
+        interference_signals = np.zeros(n_ue, dtype=float)
+        
+        diag_n_elem_array = np.eye(n_elem_array)
+        
+        for victim_id in scheduled_ues:
+        
+            victim_clustering_vec = clustering_matrix[victim_id]
+            d_victim = np.kron(np.diag(victim_clustering_vec), diag_n_elem_array)
             
-            d_k = block_diag(*d_k)
-
-            v_k = combining_vectors[ue_k]
-
-            intf_k = 0+0j
-
-            for ue_j in scheduled_ues:
-                if ue_j != ue_k:
-
-                    h_j = np.concatenate(
-                        h_ul[:, ue_j], axis = 0
-                    )
-
-                    intf_k += np.sqrt(max_ul_power) * (v_k.T.conj() @ d_k @ h_j)
+            victim_combiner = combining_vectors[victim_id]
             
-            print("intf_k: ", intf_k)
+            # Interference
+            victim_interf = 0+0j
+            
+            for interferer_id in scheduled_ues:
+                if interferer_id == victim_id:
+                    continue # Don't interfer with himself
                     
-            if np.isscalar(intf_k) or np.ndim(intf_k) == 0:
-                interference_signals[ue_k] = 0.0
-            else:
-                interference_signals[ue_k] = np.linalg.norm(intf_k)**2
-    
+                h_interferer = np.concatenate( h_ul[interferer_id], axis = 0 )
+                
+                victim_interf += np.sqrt(ul_max_power) * (victim_combiner.T.conj() @ d_victim @ h_interferer)
+                
+            interference_signals[victim_id] = check_signal_type(victim_interf)
+        
         return interference_signals
 
     @classmethod
@@ -273,33 +290,39 @@ class DMimoInternalSignals:
         noise_variance,
         rng):
         
-        K,L = clustering_matrix.shape
-        LNs = combining_vectors.shape[1]
-        Ns = int(LNs / L)
+        (
+        n_ue,
+        n_ap_array
+        ) = clustering_matrix.shape
         
-
-        noise_powers = np.zeros(K, dtype=float)
-
-        n = rng.normal(size=(LNs,1)) + 1j * rng.normal(size=(LNs,1)) 
-        n = n * np.sqrt(0.5 * noise_variance)
+        # Total of ap antennas
+        n_elem_ap_array = combining_vectors.shape[1]
         
-        for ue_k in scheduled_ues:
+        n_elem_array = n_elem_ap_array // n_ap_array
+        
+        diag_n_elem_array = np.eye(n_elem_array)
+        
+        received_noise_powers = np.zeros(n_ue, dtype=float)
 
-            d_k = []
-            for ap_l in range(L):
-                if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(Ns))
-                else:
-                    d_k.append(np.zeros((Ns,Ns)))
+        receivers_noise = rng.normal( size = (n_elem_ap_array,1) ) + 1j * rng.normal( size=(n_elem_ap_array,1) ) 
+        receivers_noise = receivers_noise * np.sqrt(0.5 * noise_variance)
+        
+        print("receivers_noise: ", receivers_noise)
+    
+        
+        for victim_id in scheduled_ues:
+        
+            victim_clustering_vec = clustering_matrix[victim_id]
+            d_victim = np.kron(np.diag(victim_clustering_vec), diag_n_elem_array)
             
-            d_k = block_diag(*d_k)
-            v_k = combining_vectors[ue_k]
-
-            n_k = v_k.T.conj() @ d_k @ n
-
-            noise_powers[ue_k] = np.linalg.norm(n_k)**2
-        
-        return noise_powers
+            victim_combiner = combining_vectors[victim_id]
+            
+            victim_noise = victim_combiner.T.conj() @ d_victim @ receivers_noise
+            
+            received_noise_powers[victim_id] = check_signal_type(victim_noise)
+            
+    
+        return received_noise_powers
 
         
 

@@ -13,6 +13,8 @@ class Centralized_MMSE_estimation:
         # _ = number of panels/arrays per UE
         # A = number of panels/arrays per AP
         K, S, _, A, Nt, Ns = H_coeffs.shape
+        
+        
 
 
         # Nt = number of antennas at each UE panel/array
@@ -43,10 +45,6 @@ class Centralized_MMSE_estimation:
 
             # Current shape -> (S, A, Nt, Ns)
             H_k = H_coeffs[ue_k, :, sp_k, :]
-            
-            if ue_k == scheduled_ues[0]:
-            
-                print("H_k: ", H_k.shape)
             
             H_k = H_k.transpose(0, 1, 3, 2)
             H_k = H_k.reshape(L, Ns, Nt)
@@ -88,8 +86,6 @@ class Centralized_MMSE_estimation:
         
             for l in range(L):
             
-                sum_x = np.sum(H_ul[l, ues_mask], axis = 0)
-                
                 yp = np.sqrt(ul_max_power) * tau_p * np.sum(H_ul[l, ues_mask], axis = 0)
                 
                 PsiInv = ul_max_power * tau_p * np.sum(R_ul[l, ues_mask], axis = 0) + eyeN
@@ -103,6 +99,8 @@ class Centralized_MMSE_estimation:
                     C_error_matrixes[ue_k, l] = R_ul[l, ue_k] - ul_max_power * tau_p * (RPsi @ R_ul[l, ue_k])
                     
                     H_estimated[l, ue_k] = np.sqrt(ul_max_power) * (RPsi @ yp)
+                    
+                    H_estimated[l, ue_k] = H_ul[l, ue_k]
                  
                     
 

@@ -103,13 +103,12 @@ class KpiCalculator:
         ul_intranet_interf = DMimoInternalSignals.uplink_intra_interference(
             sn_H, clustering, sn_sched_term, sn_sel_panels, sn_ul_combining, sn_term_max_power
         )
-
-
+        
         # 3. Receiving noise power
         ul_noise = DMimoInternalSignals.uplink_receiving_noise(
             clustering, sn_sched_term, sn_ul_combining, self._sn_noise_variance, rng
         )
-
+        
         from source.signal import InterNetInterfForDMimo
 
         # 4. Inter network interference
@@ -121,23 +120,23 @@ class KpiCalculator:
             max_dl_power = pn_stat_max_power
         )
         
-        #print("ul_noise: ", ul_noise)
+        print("ul_noise: ", ul_noise)
         
         #print("ul_signals: ", ul_signals)
         
-        #sprint("ul_internet_interf: ", ul_internet_interf)
+        #print("ul_internet_interf: ", ul_internet_interf)
         
-        print("intra interference: ", ul_intranet_interf)
+        #print("intra interference: ", ul_intranet_interf)
         
 
-        sinrs = ul_signals / (ul_noise + ul_intranet_interf)
+        sinrs = ul_signals / (ul_noise)
         sinrs[np.where(np.isnan(sinrs))[0]] = 0
         
         #print("Sinrs: ", 10*np.log10(sinrs))
 
         spec_effs = np.log2(1 + sinrs)
         
-        print("Soma das SEs: ", np.sum(spec_effs))
+        print("Soma das SEs: ", spec_effs)
 
         return spec_effs
 

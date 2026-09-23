@@ -301,6 +301,8 @@ class ScenarioReader:
             term_min_ant_gain   = self.sn_config.methods["terminal_antenna_gain"].g_max - self.sn_config.methods["terminal_antenna_gain"].am,
             pn_n_var            = self.pn_config.noise_variance,
         )
+        
+        scheduled_ues = np.array([scheduled_ues[0], scheduled_ues[1]])
 
         # SN performing channel estimation considering all UEs
         (
@@ -320,7 +322,7 @@ class ScenarioReader:
         # All APs serve all UEs
         L = self.sn_config.num_stations * self.sn_config.num_arrays
         clustering_matrix = np.ones((self.sn_config.num_terminals, L))
-
+        
         # SN computing the uplink combiners
         sn_ul_combiners = self._signal_processor.compute_uplink_combiners(
             H_hat_coeffs      = H_hat_coeffs,
@@ -385,6 +387,7 @@ class ScenarioReader:
 
         # Terminal panel selection techniques names
         tps_method_name = "perform_as_second_step"
+    
 
         # 2. SN performing UE panel selection
         ues_panels = self._scheduling.select_terminal_panels(
