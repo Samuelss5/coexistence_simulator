@@ -15,6 +15,7 @@ class Centralized_MMSE_estimation:
         K, S, _, A, Nt, Ns = H_coeffs.shape
         
         
+        
 
 
         # Nt = number of antennas at each UE panel/array
@@ -71,7 +72,11 @@ class Centralized_MMSE_estimation:
         if num_scheduled > 0:
             pilot_allocation_vec[scheduled_ues] = np.arange(num_scheduled) % tau_p
             
-        print("pilot_allocation_vec: ", pilot_allocation_vec)
+            
+        
+        Np = np.sqrt(0.5)*(np.random.normal(size =(Ns,L,tau_p)) + 1j*np.random.normal(size=(Ns,L,tau_p)))
+        
+    
 
         H_estimated = np.zeros(H_ul.shape, dtype = np.complex128)
 
@@ -86,30 +91,23 @@ class Centralized_MMSE_estimation:
         
             for l in range(L):
             
-                yp = np.sqrt(ul_max_power) * tau_p * np.sum(H_ul[l, ues_mask], axis = 0)
+                yp = np.sqrt(ul_max_power) * tau_p * np.sum(H_ul[l, ues_mask], axis = 0) + np.sqrt(tau_p) * Np[:, l, p][:, np.newaxis]
                 
                 PsiInv = ul_max_power * tau_p * np.sum(R_ul[l, ues_mask], axis = 0) + eyeN
                 
                 Psi_inv_matrix = np.linalg.inv(PsiInv)
 
                 for ue_k in ues_mask:
-
+                    
                     RPsi = R_ul[l, ue_k] @ Psi_inv_matrix
 
                     C_error_matrixes[ue_k, l] = R_ul[l, ue_k] - ul_max_power * tau_p * (RPsi @ R_ul[l, ue_k])
                     
                     H_estimated[l, ue_k] = np.sqrt(ul_max_power) * (RPsi @ yp)
                     
-                    H_estimated[l, ue_k] = H_ul[l, ue_k]
-                 
+                    #sH_estimated[l, ue_k] = H_ul[l, ue_k]
                     
-
-        #print("H_ul")
-        #print(H_ul[0, scheduled_ues[0]])
-        
-        #print("H_estimated")
-        #print(H_estimated[0, scheduled_ues[0]])
-        
+            
         return H_estimated, C_error_matrixes
 
     

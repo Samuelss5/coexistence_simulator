@@ -56,8 +56,8 @@ class UMa3gppTerminalsDeployment:
         # Minimum distance between UEs and APs: 35 m
         r_min = 35
 
-        # Assuming that the spacing between the APs is of 100 meters
-        r_max = ISD - 2 * r_min
+        # Assuming that the spacing between the APs is of 
+        r_max = ISD - r_min
 
         # Randomic allocation of stations
         Random_stations_allocation = rng.integers(0, stations_coords.shape[0], size = num_terminals)

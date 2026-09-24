@@ -302,7 +302,7 @@ class ScenarioReader:
             pn_n_var            = self.pn_config.noise_variance,
         )
         
-        scheduled_ues = np.array([scheduled_ues[0], scheduled_ues[1]])
+    
 
         # SN performing channel estimation considering all UEs
         (
@@ -355,6 +355,8 @@ class ScenarioReader:
             )
 
         sn_ul_caused_inr_by_all_ues = lin2db(sn_ul_caused_inr_by_all_ues[0])
+        
+        print("Caused INR: ", sn_ul_caused_inr_by_all_ues)
 
         return (
             sn_ul_caused_inr_by_all_ues, 

@@ -159,7 +159,7 @@ Dmimo_network:
   terminal_scheduling_method_class: 'IndividualEstimated_INR'
 
 
-  num_terminals: 15
+  num_terminals: 3
   num_stations: 16
 
   num_panels: 4
@@ -168,7 +168,7 @@ Dmimo_network:
   panel_N_h: 1
   panel_N_v: 1
 
-  array_N_h: 4
+  array_N_h: 8
   array_N_v: 2
 
   terminals_max_power: 0.1
@@ -188,7 +188,6 @@ Dmimo_network:
   carrier_frequency: 7.75e+9
 
   num_pilot_sequences: 20
-
 
 num_parallel_sims: 10
 num_snapshots: 100

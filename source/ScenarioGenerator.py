@@ -11,6 +11,9 @@ from .LoadMethods import MethodLoader
 
 import numpy as np
 
+import multiprocessing as mp
+
+
 class SeedManager:
 
     # Calling spawn(n) will create n SeedSequences that can be used to seed independent BitGenerators, i.e. for different threads.

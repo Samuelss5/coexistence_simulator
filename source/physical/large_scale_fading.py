@@ -3,6 +3,7 @@ import numpy as np
 from source.geometry.coordinates import calculate_2d_distances
 from source.geometry.coordinates import calculate_3d_distances
 
+from source.utils import db2lin
 
 class UMa_3gpp_large_scale_fading:
 
@@ -11,7 +12,7 @@ class UMa_3gpp_large_scale_fading:
     K_sig = 9 # dB
 
     sh_los  = 4 # dB
-    sh_nlos = 7.82 # dB
+    sh_nlos = 7.8 # dB
 
     c = 3e8
 
@@ -37,20 +38,34 @@ class UMa_3gpp_large_scale_fading:
 
     @classmethod
     def path_loss(cls, d2_dist, d3_dist, los_mask, h_ut, h_bs, fc):
-
+    
+        
+        h_e = 1 # metro
+        
         # Effective BS antennas height
 
-        dh_bs = h_bs - 1
+        dh_bs = h_bs - h_e
 
         # Effective UT antennas height
 
-        dh_ut = h_ut - 1
+        dh_ut = h_ut - h_e
+        
+        print("dh_bs: ", dh_bs)
+        
+        print("dh_ut: ", dh_ut)
 
         # Distance breakpoint
-
-        d_bp = 4 * dh_bs * dh_ut * fc / cls.c
+        
+        lambda_ =  cls.c / fc
+        
+        d_bp = 4 * dh_bs * dh_ut / lambda_
+        
+        print("fc usando em Hz: ", fc)
+        print("distance break point: ", d_bp)
 
         fc = fc / 1e9
+        
+        print("fc usado em GHz: ", fc)
 
         # Links with distance less than the bp distance
 
@@ -59,17 +74,13 @@ class UMa_3gpp_large_scale_fading:
 
         # Path-loss expressions for los channels
 
-        pl1_los = 32.4 + 21 * np.log10(d3_dist) + 20 * np.log10(fc)
+        pl1_los = 28.0 + 22 * np.log10(d3_dist) + 20 * np.log10(fc)
 
-        pl2_los = 32.4 + 40 * np.log10(d3_dist) + 20 * np.log10(fc) - 9.5 * np.log10( (d_bp * d_bp) + (h_bs - h_ut) * (h_bs - h_ut) )
+        pl2_los = 28.0 + 40 * np.log10(d3_dist) + 20 * np.log10(fc) - 9.0 * np.log10( (d_bp * d_bp) + (h_bs - h_ut) * (h_bs - h_ut) )
 
         # Generic path-loss expression for Nlos channels
 
-        pl_nlos = 35.3 * np.log10(d3_dist) + 22.4 + 21.3 * np.log10(fc) - 0.3 * (h_ut - 1.5)
-
-        # path loss for non line of sight links
-
-        pl_line_nlos = 13.54 + 39.08 * np.log10(d3_dist) + 20 * np.log10(fc) - 0.6 * (h_ut - 1.5)
+        pl_nlos = 32.4 + 20 * np.log10(fc) + 30 * np.log10(d3_dist)
 
         path_loss = np.zeros( d3_dist.shape, dtype = np.float64 )
 
@@ -80,10 +91,8 @@ class UMa_3gpp_large_scale_fading:
 
         path_loss = np.where(dist_mask, pl1_los, pl2_los)
 
-        los_mask = path_loss > pl_line_nlos
-
-        path_loss = np.where(los_mask, path_loss, pl_line_nlos)
-
+        path_loss = np.where(los_mask, path_loss, pl_nlos)
+        
         return -1 * path_loss
 
 
@@ -135,10 +144,12 @@ class UMa_3gpp_large_scale_fading:
         path_loss = cls.path_loss(d2_dist, d3_dist, K_factors > 0, h_ut, h_bs, fc)
 
         shadowing = cls.uncorrelated_shadowing(K_factors > 0, rng)
+        
+        
 
         lsf_coefficients = path_loss - shadowing
 
-        lsf_coefficients = pow(10, lsf_coefficients/10)
+        lsf_coefficients = db2lin(lsf_coefficients)
 
         queue.put((lsf_coefficients, K_factors))
     
@@ -166,11 +177,11 @@ class UMa_3gpp_large_scale_fading:
         path_loss = cls.path_loss(d2_dist, d3_dist, K_factors > 0, h_ut, h_bs, fc)
 
         shadowing = cls.uncorrelated_shadowing(K_factors > 0, rng)
-
+        
         lsf_coefficients = path_loss - shadowing
 
-        lsf_coefficients = pow(10, lsf_coefficients/10)
-
+        lsf_coefficients = db2lin(lsf_coefficients)
+        
         return lsf_coefficients, K_factors
 
     @classmethod

@@ -3,7 +3,7 @@ from .LoadMethods import MethodLoader
 
 from dataclasses import dataclass
 
-from source.utils import dbm2lin
+from source.utils import*
 
 import numpy as np
 
@@ -39,7 +39,7 @@ class NetworkConfig:
 
             carrier_frequency = parameters["carrier_frequency"],
 
-            noise_variance = dbm2lin(parameters["noise_density"]) * parameters["bandwidth"]
+            noise_variance = db2lin(parameters["noise_density"] + 10 * np.log10(parameters["bandwidth"]) + parameters["noise_figure"])
         )
 
 
@@ -68,7 +68,9 @@ class FixedServiceConfig(NetworkConfig):
             station_max_power = parameters["stations_max_power"],
 
             carrier_frequency = parameters["carrier_frequency"],
-
+            
+            #noise_variance = db2lin(parameters["noise_density"] + 10 * np.log10(parameters["bandwidth"]) + parameters["noise_figure"]),
+            
             noise_variance = dbm2lin(parameters["noise_density"]) * parameters["bandwidth"],
 
             methods = methods
@@ -118,6 +120,8 @@ class DMimoConfig(NetworkConfig):
             station_max_power = parameters["stations_max_power"],
 
             carrier_frequency = parameters["carrier_frequency"],
+            
+            #noise_variance = db2lin(parameters["noise_density"] + 10 * np.log10(parameters["bandwidth"]) + parameters["noise_figure"]),
 
             noise_variance = dbm2lin(parameters["noise_density"]) * parameters["bandwidth"],
 

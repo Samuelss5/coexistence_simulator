@@ -65,16 +65,15 @@ class DMimoCentralizedMmseCombining:
                 
                 hh = h_conc[interferer_id] @ h_conc[interferer_id].T.conj()
                 
-                q_victim += ul_max_power * d_victim @ (hh ) @ d_victim
+                #q_victim += ul_max_power * d_victim @ (hh + c_error_matrices[interferer_id]) @ d_victim
+    
+                q_victim += ul_max_power * d_victim @ (hh) @ d_victim
                 
             q_victim += eyeN
             
             victim_combiner = ul_max_power * np.linalg.inv(q_victim) @ d_victim @ h_conc[victim_id]
         
             combining_vecs[victim_id] = victim_combiner
-            
-            combining_vecs[victim_id] = h_conc[victim_id]
-            
             
         return combining_vecs
             

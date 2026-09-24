@@ -206,8 +206,6 @@ class DMimoInternalSignals:
             
             h_ue = np.concatenate( h_ul[ue_id], axis = 0 )
             
-            x = h_ue - ue_combiner
-            
             target_signals[ue_id] = ul_max_power * np.linalg.norm( ue_combiner.T.conj() @ d_ue @ h_ue )**2
 
         return target_signals
@@ -277,7 +275,7 @@ class DMimoInternalSignals:
                 
                 victim_interf += np.sqrt(ul_max_power) * (victim_combiner.T.conj() @ d_victim @ h_interferer)
                 
-            interference_signals[victim_id] = check_signal_type(victim_interf)
+            interference_signals[victim_id] = np.linalg.norm(victim_interf)**2
         
         return interference_signals
 
@@ -305,10 +303,9 @@ class DMimoInternalSignals:
         received_noise_powers = np.zeros(n_ue, dtype=float)
 
         receivers_noise = rng.normal( size = (n_elem_ap_array,1) ) + 1j * rng.normal( size=(n_elem_ap_array,1) ) 
-        receivers_noise = receivers_noise * np.sqrt(0.5 * noise_variance)
+        receivers_noise = receivers_noise * np.sqrt(noise_variance * 0.5)
         
-        print("receivers_noise: ", receivers_noise)
-    
+        print("Noise : ", noise_variance)
         
         for victim_id in scheduled_ues:
         
@@ -319,7 +316,7 @@ class DMimoInternalSignals:
             
             victim_noise = victim_combiner.T.conj() @ d_victim @ receivers_noise
             
-            received_noise_powers[victim_id] = check_signal_type(victim_noise)
+            received_noise_powers[victim_id] = np.linalg.norm(victim_noise)**2
             
     
         return received_noise_powers

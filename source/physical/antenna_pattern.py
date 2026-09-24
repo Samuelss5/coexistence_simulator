@@ -44,6 +44,9 @@ class Stations_3gpp_pattern:
 
         d_AoAs_h = 180 * relative_AoAs_h / np.pi
         d_AoAs_v = 180 * relative_AoAs_v / np.pi
+        
+        #d_AoAs_h = d_AoAs_h * 0 
+        #d_AoAs_v = d_AoAs_v * 0 
 
         Gains_h = cls.horizontal(d_AoAs_h)
         Gains_v = cls.vertical(d_AoAs_v)
@@ -59,6 +62,9 @@ class Stations_3gpp_pattern:
 
         d_AoAs_h = 180 * relative_AoAs_h / np.pi
         d_AoAs_v = 180 * relative_AoAs_v / np.pi
+        
+        #d_AoAs_h = d_AoAs_h * 0 
+        #d_AoAs_v = d_AoAs_v * 0 
 
         Gains_h = cls.horizontal(d_AoAs_h)
         Gains_v = cls.vertical(d_AoAs_v)
@@ -99,6 +105,9 @@ class Terminals_3gpp_pattern:
 
         d_AoAs_h = 180 * relative_AoAs_h / np.pi
         d_AoAs_v = 180 * relative_AoAs_v / np.pi
+        
+        #d_AoAs_h = d_AoAs_h * 0 
+        #d_AoAs_v = d_AoAs_v * 0 
 
         Gains_h = cls.horizontal(d_AoAs_h)
         Gains_v = cls.vertical(d_AoAs_v)
@@ -114,6 +123,9 @@ class Terminals_3gpp_pattern:
 
         d_AoAs_h = 180 * relative_AoAs_h / np.pi
         d_AoAs_v = 180 * relative_AoAs_v / np.pi
+        
+        #d_AoAs_h = d_AoAs_h * 0 
+        #d_AoAs_v = d_AoAs_v * 0 
 
         Gains_h = cls.horizontal(d_AoAs_h)
         Gains_v = cls.vertical(d_AoAs_v)

@@ -1,8 +1,13 @@
 import sys
-import os
+
 import argparse
 from pathlib import Path
 import yaml
+import multiprocessing as mp
+
+import os
+
+mp.set_start_method('fork')
 from source.ScenarioGenerator import ScenarioGenerator
 
 def run_simulation(args_obj):

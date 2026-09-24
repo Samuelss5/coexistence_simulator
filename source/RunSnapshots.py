@@ -155,6 +155,14 @@ class RunDMimoSnapshots:
                 aps_fixed_coords, self.config.terminal_height, self.config.num_terminals, rng
             )
             ues_coords_for_all_snapshots[ite] = ues_coords
+            
+            from source.geometry.coordinates import calculate_2d_distances
+            
+            d2_dist = calculate_2d_distances(ues_coords, aps_fixed_coords)
+            
+            print("UE AP dist: ")
+            print(d2_dist)
+            
 
         return (ues_coords_for_all_snapshots, aps_coords_for_all_snapshots)
 
@@ -520,6 +528,10 @@ class RunDMimoSnapshots:
                 self.config.terminal_height, self.config.station_height, 
                 self.config.carrier_frequency, rng, None
             )
+            
+            from source.utils import lin2db
+            
+            print("ls_fading_coeffs: ", lin2db(ls_fading_coeffs))
 
             ls_fading_coeffs_for_all_snapshots[ite] = ls_fading_coeffs
             K_coeffs_for_all_snapshots[ite]   = K_coeffs
@@ -546,6 +558,8 @@ class RunDMimoSnapshots:
                 ues_gains_for_all_snapshots[ite] *
                 aps_gains_for_all_snapshots[ite].transpose(1,0,3,2)
                 )
+                
+            #print("ls_gain_coeffs: ", ls_gain_coeffs)
 
             ls_gain_for_all_snapshots[ite] = ls_gain_coeffs
 
@@ -1235,15 +1249,15 @@ class InterNetworkLinksBuilder:
     def _generate_channel(self, ite, ls_gain_for_all_snapshots, K_for_all_snapshots, rx_R_for_all_snapshots, tx_R_for_all_snapshots,
                            rx_doas_for_all_snapshots, tx_doas_for_all_snapshots, rx_N, tx_N, rng):
         return self.pn_conf.methods["channel_model"].generate_multiple_channels(
-            ls_gain_coeffs=ls_gain_for_all_snapshots[ite],
-            K_coeffs=K_for_all_snapshots[ite],
-            rx_R_matrices=rx_R_for_all_snapshots[ite],
-            tx_R_matrices=tx_R_for_all_snapshots[ite],
-            rx_doas=(rx_doas_for_all_snapshots[ite][0], rx_doas_for_all_snapshots[ite][1]),
-            tx_doas=(tx_doas_for_all_snapshots[ite][0], tx_doas_for_all_snapshots[ite][1]),
-            rx_N=rx_N,
-            tx_N=tx_N,
-            rng=rng,
+            ls_gain_for_all_snapshots[ite],
+            K_for_all_snapshots[ite],
+            rx_R_for_all_snapshots[ite],
+            tx_R_for_all_snapshots[ite],
+            (rx_doas_for_all_snapshots[ite][0], rx_doas_for_all_snapshots[ite][1]),
+            (tx_doas_for_all_snapshots[ite][0], tx_doas_for_all_snapshots[ite][1]),
+            rx_N,
+            tx_N,
+            rng,
         )
 
 

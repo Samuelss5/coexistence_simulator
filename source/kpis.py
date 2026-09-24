@@ -81,6 +81,8 @@ class KpiCalculator:
         else: 
 
             inr = np.zeros(pn_term_sn_term_H.shape[0], dtype=float)
+            
+            print("INR obtida: ", inr)
 
         return inr
 
@@ -120,23 +122,11 @@ class KpiCalculator:
             max_dl_power = pn_stat_max_power
         )
         
-        print("ul_noise: ", ul_noise)
-        
-        #print("ul_signals: ", ul_signals)
-        
-        #print("ul_internet_interf: ", ul_internet_interf)
-        
-        #print("intra interference: ", ul_intranet_interf)
-        
 
-        sinrs = ul_signals / (ul_noise)
+        sinrs = ul_signals / (ul_intranet_interf + ul_noise + ul_internet_interf)
         sinrs[np.where(np.isnan(sinrs))[0]] = 0
         
-        #print("Sinrs: ", 10*np.log10(sinrs))
-
         spec_effs = np.log2(1 + sinrs)
-        
-        print("Soma das SEs: ", spec_effs)
 
         return spec_effs
 
