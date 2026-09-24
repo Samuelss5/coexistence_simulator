@@ -122,12 +122,26 @@ class KpiCalculator:
             max_dl_power = pn_stat_max_power
         )
         
+        #print(sn_H)
 
-        sinrs = ul_signals / (ul_intranet_interf + ul_noise + ul_internet_interf)
+        sinrs = ul_signals / (ul_intranet_interf + ul_internet_interf + self._sn_noise_variance)
         sinrs[np.where(np.isnan(sinrs))[0]] = 0
         
+        from source.utils import lin2db
+        
+        #print("UL signal: ", ul_signals)
+        
+        #print("Noise variance: ", self._sn_noise_variance)
+        #print("SINRS: ", lin2db(sinrs))
+        
+        sinrs = ul_signals / (ul_intranet_interf + ul_internet_interf + ul_noise)
+        sinrs[np.where(np.isnan(sinrs))[0]] = 0
+        
+        #print("Noise ponderado: ", ul_noise)
+        #print("SINRS: ", lin2db(sinrs))
+        
         spec_effs = np.log2(1 + sinrs)
-
+        
         return spec_effs
 
 

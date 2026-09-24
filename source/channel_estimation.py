@@ -105,7 +105,7 @@ class Centralized_MMSE_estimation:
                     
                     H_estimated[l, ue_k] = np.sqrt(ul_max_power) * (RPsi @ yp)
                     
-                    #sH_estimated[l, ue_k] = H_ul[l, ue_k]
+                    H_estimated[l, ue_k] = H_ul[l, ue_k]
                     
             
         return H_estimated, C_error_matrixes

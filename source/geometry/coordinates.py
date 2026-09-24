@@ -44,7 +44,7 @@ class UMa3gppTerminalsDeployment:
         rng: object
         ):
 
-        ISD = 350
+        ISD = 150
         
         """
         1. Considering that all terminals have the same height
@@ -54,7 +54,7 @@ class UMa3gppTerminalsDeployment:
         """
 
         # Minimum distance between UEs and APs: 35 m
-        r_min = 35
+        r_min = 10
 
         # Assuming that the spacing between the APs is of 
         r_max = ISD - r_min
@@ -85,7 +85,7 @@ class RegularGridDeployment:
         rng: object
         ):
 
-        ISD = 350
+        ISD = 150
 
         num_row = int(np.sqrt(num_elements))
         num_col = int(np.sqrt(num_elements))

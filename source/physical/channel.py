@@ -1,5 +1,7 @@
 import numpy as np
 
+from scipy.linalg import sqrtm
+
 class RicianChannelModel:
 
     """
@@ -72,23 +74,25 @@ class RicianChannelModel:
                         
                         transmi_af = np.kron(transmi_horz_af, transmi_vert_af)[:, np.newaxis]
                         
-                        steering_matrix = receive_af @ transmi_af.T
+                        steering_matrix = receive_af @ transmi_af.T.conj()
                         
-                        diff = rng.normal(0,1, size=steering_matrix.shape) + 1j * rng.normal(0,1, size=steering_matrix.shape)
+                        diff_iid = rng.normal(0,1, size=steering_matrix.shape) + 1j * rng.normal(0,1, size=steering_matrix.shape)
+                        diff_iid = diff_iid / np.sqrt(2)
                         
-                        H_nlos = ( np.sqrt(receive_R_matrices[rece_id, tran_id, rece_panel_id, tran_panel_id]) 
-                                   @ diff
-                                   @ np.sqrt(transmi_R_matrices[tran_id, rece_id, tran_panel_id, rece_panel_id]) ) * np.sqrt(0.5)
-                                   
+                        R_rece = sqrtm(receive_R_matrices[rece_id, tran_id, rece_panel_id, tran_panel_id])
+                        R_tran = sqrtm(transmi_R_matrices[tran_id, rece_id, tran_panel_id, rece_panel_id])
+                        
+                        H_nlos = (R_rece @ diff_iid @ R_tran.T)
+                        
                         K = K_coeffs[rece_id, tran_id]
                         beta = ls_gain_coeffs[rece_id, tran_id, rece_panel_id, tran_panel_id]
                                  
                         los_coeff  = np.sqrt(K / (K + 1))
                         nlos_coeff = np.sqrt(1 / (K + 1))
                     
-                        H = np.sqrt(beta) * (los_coeff * steering_matrix + nlos_coeff * diff)
+                        H = np.sqrt(beta) * (los_coeff * steering_matrix + nlos_coeff * H_nlos)
                         
-                        H = np.sqrt(beta * 0.5) * diff
+                        #print("Norma canal: ", np.linalg.norm(H)**2)
                         
                         H_coeffs[rece_id, tran_id, rece_panel_id, tran_panel_id] = H
                                    

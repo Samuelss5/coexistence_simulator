@@ -303,7 +303,7 @@ class DMimoInternalSignals:
         received_noise_powers = np.zeros(n_ue, dtype=float)
 
         receivers_noise = rng.normal( size = (n_elem_ap_array,1) ) + 1j * rng.normal( size=(n_elem_ap_array,1) ) 
-        receivers_noise = receivers_noise * np.sqrt(noise_variance * 0.5)
+        receivers_noise = receivers_noise * np.sqrt(noise_variance)
         
         print("Noise : ", noise_variance)
         

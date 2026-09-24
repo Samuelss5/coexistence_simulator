@@ -145,6 +145,9 @@ class RunDMimoSnapshots:
         aps_fixed_coords = self.config.methods["station_deployment"].deploy(
             self.config.station_height, self.config.num_stations, rng
         )
+        
+        print("Aps coords: ")
+        print(aps_fixed_coords)
 
         for ite in range(num_snapshots):
         
@@ -154,16 +157,15 @@ class RunDMimoSnapshots:
             ues_coords = self.config.methods["terminal_deployment"].deploy(
                 aps_fixed_coords, self.config.terminal_height, self.config.num_terminals, rng
             )
+            
+            print("UEs coordinates: ")
+            print(ues_coords)
             ues_coords_for_all_snapshots[ite] = ues_coords
             
             from source.geometry.coordinates import calculate_2d_distances
             
             d2_dist = calculate_2d_distances(ues_coords, aps_fixed_coords)
             
-            print("UE AP dist: ")
-            print(d2_dist)
-            
-
         return (ues_coords_for_all_snapshots, aps_coords_for_all_snapshots)
 
 
@@ -520,16 +522,21 @@ class RunDMimoSnapshots:
 
         ls_fading_coeffs_for_all_snapshots = np.zeros(num_snapshots, dtype=np.ndarray)
         K_coeffs_for_all_snapshots   = np.zeros(num_snapshots, dtype=np.ndarray)
+        
+        certainty_of_los = None
 
         for ite in range(num_snapshots):
-
+    
             ls_fading_coeffs, K_coeffs = self.config.methods["lsf_model"].compute(
                 ues_coords_for_all_snapshots[ite], aps_coords_for_all_snapshots[ite], 
                 self.config.terminal_height, self.config.station_height, 
-                self.config.carrier_frequency, rng, None
+                self.config.carrier_frequency, rng, certainty_of_los
             )
             
             from source.utils import lin2db
+            
+            print("Coeficientes K: ")
+            print(K_coeffs)
             
             print("ls_fading_coeffs: ", lin2db(ls_fading_coeffs))
 

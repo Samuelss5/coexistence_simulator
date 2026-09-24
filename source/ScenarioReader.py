@@ -361,7 +361,7 @@ class ScenarioReader:
         return (
             sn_ul_caused_inr_by_all_ues, 
             len(scheduled_ues), 
-            sn_ul_spec_effs
+            np.sum(sn_ul_spec_effs)
             )
         
       
