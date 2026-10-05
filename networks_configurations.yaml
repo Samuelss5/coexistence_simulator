@@ -190,6 +190,6 @@ Dmimo_network:
   num_pilot_sequences: 20
 
 num_parallel_sims: 10
-num_snapshots: 20
+num_snapshots: 100
 
 

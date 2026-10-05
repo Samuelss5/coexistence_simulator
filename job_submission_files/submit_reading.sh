@@ -6,7 +6,7 @@
 #SBATCH --error="/home/users/samuelss/coexistence_simulator/job_submission_files/reading_results/reading_error/error_%A_%a..txt"
 # Job Resources
 #SBATCH --mincpus=32
-#SBATCH --mem=15G
+#SBATCH --mem=32G
 #SBATCH --time=99:00:00
 
 echo -e "Job started at $(date)"
