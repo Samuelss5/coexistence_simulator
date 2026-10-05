@@ -29,7 +29,6 @@ class InterNetInterf:
         term_sel_panels,
         max_ul_p: float):
 
-        print(channel_tensor.shape)
 
         num_receivers, num_transmitters, _, _, _, _ = channel_tensor.shape
         
@@ -69,81 +68,66 @@ class InterNetInterfForDMimo:
         max_dl_power
         ):
 
-        # 1. H is the channel matrix between the APs and the interferer that is in DL
+
+        # 1. The DMimo network is the victim and the other network is the interferer
+        # 2. The DMimo network is in uplink and applies a centralised combiner
+        # 3. The other network is in downlink and applies decentralised precoder
 
 
-        # Given that the APs in the cell-free network are the ones experiencing interference 
-        # while they are in the uplink, it is expected that the dimensions of the H matrix will reflect this
+        # Given that the APs in the cell-free network are the ones experiencing interference, 
+        # it is expected that the dimensions of "channel_tensor" will reflect this
 
 
-        # OBS: All DL interferers transmit with maximum power
+      
 
+        #   n_vic_ap    -> nº de APs da rede vítima (dMIMO, UL)
+        #   n_int       -> nº de UEs/transmissores da rede interferente (DL)
+        #   n_vic_arr   -> nº de arrays por AP da vítima
+        #   n_int_panel -> nº de painéis por transmissor interferente (precoder descentralizado)
+        #   n_elem_vic  -> nº de elementos de antena no lado vítima (served) 
+        #   n_elem_int  -> nº de elementos de antena no lado interferente
+
+        (
+        n_vic_ap, 
+        n_int, 
+        n_vic_array, 
+        n_int_panel, 
+        n_elem_vic, 
+        n_elem_int ) = channel_tensor.shape
+
+        n_vic_ap_arrays = n_vic_ap * n_vic_array
+
+        #   n_vic_ap -> nº de UEs da rede vítima (dMIMO, UL)
+        n_vic_ue = combining_vectors.shape[0]
 
         h_dense = np.array(channel_tensor.tolist())
+        h_dense = h_dense.transpose(0,2,1,3,4,5)
 
-        I, S, P, A, Ni, Ns = h_dense.shape
-        L = S * A
-        LNs = L * Ns
+        h_ul = h_dense.reshape(n_vic_ap_arrays, n_int * n_int_panel, n_elem_vic, n_elem_int)
 
-        h_trans = h_dense.transpose(1,3,0,2,5,4)
+        diag_n_elem_vic = np.eye(n_elem_vic)
+    
+        interference_signals = np.zeros(n_vic_ue, dtype=float)
 
-        
-        h_ul = h_trans.reshape(L, I, P, Ns, Ni)
+        for vic_ue_id in scheduled_ues:
 
-        h_ul = h_ul.reshape(L, I * P, Ns, Ni)
+            vic_ue_clustering_vec = clustering_matrix[vic_ue_id, :]
 
+            d_vic_ue = np.kron(np.diag(vic_ue_clustering_vec), diag_n_elem_vic)
 
-        # K = number of UEs
-        K = combining_vectors.shape[0]
+            vic_ue_combiner = combining_vectors[vic_ue_id]
 
-        # S  = number of APs (stations)
-        # I  = number of interferers in DL
-        # A  = number of arrays per AP
-        # P  = number of panels per interferer 
-        # Ns = number of antennas at each AP array
-        # Ni = number of antennas at each DL interferer
+            interf = 0+0j
 
-        
+            for int_id in range(n_int):
 
-        # Concatenated channels between the DL interferers and all APs of the cell-free network
+                h_int = np.concatenate(h_ul[:, int_id, ...], axis = 0)
+
+                interf += np.sqrt(max_dl_power) * ( vic_ue_combiner.T.conj() @ d_vic_ue @ h_int)
 
 
-        interference_signals = np.zeros(K, dtype=float)
-
-        for ue_k in scheduled_ues:
-
-            # Each UE from the cell-free will have a sense of the interference coming from the other network
-
-            v_k = combining_vectors[ue_k]
-
-            d_k = []
-            for ap_l in range(L):
-                if clustering_matrix[ue_k, ap_l] == 1:
-                    d_k.append(np.eye(Ns))
-                else:
-                    d_k.append(np.zeros((Ns,Ns)))
-
-            d_k = block_diag(*d_k)
-        
-
-            intf_k = 0+0j
-            
-            
-
-            for int_j in range(I):
-
-                h_j = np.concatenate(
-                    h_ul[:, int_j, ...], axis = 0
-                )
-            
-                intf_k += np.sqrt(max_dl_power) * (v_k.T.conj() @ d_k @ h_j)
-            
-
-            if np.isscalar(intf_k) or np.ndim(intf_k) == 0:
-                interference_signals[ue_k] = 0.0
-            else:
-                interference_signals[ue_k] = np.linalg.norm(intf_k)**2
-        
+            interference_signals[vic_ue_id] = check_signal_type(interf)
+   
         return interference_signals
 
 
@@ -179,7 +163,7 @@ class DMimoInternalSignals:
         
         n_ap_array = n_ap * n_array_per_ap
         
-        # Uplink channel tensor
+        # --- uplink channel tensor --- #
         h_ul = np.zeros((n_ue, n_ap_array, n_elem_array, n_elem_panel), dtype=np.complex128)
 
         for ue_id in scheduled_ues:
@@ -237,7 +221,7 @@ class DMimoInternalSignals:
         n_ap_array = n_ap * n_array_per_ap
                 
 
-        # Uplink channel tensor
+        # uplink channel tensor
         h_ul = np.zeros((n_ue, n_ap_array, n_elem_array, n_elem_panel), dtype=np.complex128)
 
         for ue_id in scheduled_ues:
@@ -304,9 +288,7 @@ class DMimoInternalSignals:
 
         receivers_noise = rng.normal( size = (n_elem_ap_array,1) ) + 1j * rng.normal( size=(n_elem_ap_array,1) ) 
         receivers_noise = receivers_noise * np.sqrt(noise_variance)
-        
-        print("Noise : ", noise_variance)
-        
+                
         for victim_id in scheduled_ues:
         
             victim_clustering_vec = clustering_matrix[victim_id]
@@ -370,7 +352,7 @@ class DMimoDownlinkToDownlinkInterference:
         return interference_signals
 
 
-### INTER NETWORK INTERFERENCE CLASSES
+### ----- INTER NETWORK INTERFERENCE CLASSES ----- ### 
 
 class InterfCausedByDMimo:
 
@@ -394,6 +376,21 @@ class InterfCausedByDMimo:
         # OBS: "pan" is the abbreviation for panel 
 
         H = np.array(H_tensor.tolist())
+
+
+        #  (
+        #         n_ue,
+        #         n_ap,
+        #         n_panel_per_ue,
+        #         n_array_per_ap,
+        #         n_elem_panel,
+        #         n_elem_array
+        #         ) = h_dense.shape
+
+        # (
+        # n_term,
+        # n_ue 
+        # )
 
         num_pn_term, num_sn_term, num_pn_pan, num_sn_pan = H.shape
 

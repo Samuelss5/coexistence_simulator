@@ -52,8 +52,10 @@ def read_parallel_scenarios(task_id: int):
     
     # Scenarios reader
     sce_reader = ScenarioReader(pn, sn)
+
+
     
-    
+    # 1. Inter network channel parameters -> LSF, Channel matrixes, etc.
     inter_net_data = load_inter_network_parameters(task_id)
 
 
@@ -70,7 +72,7 @@ def read_parallel_scenarios(task_id: int):
         ])
         
         
-    # Secondary network scenarios parameters    
+    # 2. Secondary network channel parameters -> LSF, Channel matrixes, etc.
 
     dir_path = Path(__file__).resolve().parent
 
@@ -85,28 +87,34 @@ def read_parallel_scenarios(task_id: int):
     ])
 
 
-    # ______________________________
-    # scheduling techniques
-    # ______________________________
+    
 
-    scheduling_techniques_path = 'source/scheduling/scheduling.py'
-    panel_selection_path = 'source/scheduling/panel_selection.py'
-   
-    # UEs scheduling methods & thresholds
+    # ----------- Scheduling methods file path ----------- # 
+    scheduling_techniques_path = "source/scheduling/scheduling.py"
+
+    # ----------- Panel selection methods file path ----------- #
+    panel_selection_path       = "source/scheduling/panel_selection.py"
+
+
+    # ----------- UEs panel selection methods that will be used ----------- #
+    DMimo_panel_selection_techniques = ["TpsSelfishFromLsfGain", "TpsAltruisticFromLsfGain", "TpsRandomic"]
+
+
+    # ----------- UEs scheduling methods & thresholds that will be used ----------- #
     DMimo_UE_scheduling_techniques = ["IndividualEstimated_INR", "CumulativeIndividualEstimated_INR"]
     DMimo_UE_scheduling_thresholds = [-10.0, -12.5, -15.0]
 
-    # UEs panel selection methods
-    DMimo_panel_selection_techniques = ['TpsAltruisticFromLsfGain', "TpsRandomic",]
-
-
-    # 1. Scheduling before panel selection
-
+    
+    # ----------- KPIs dictionaries ----------- #
+    # 1. INR levels caused to the PN
     ul_inr_results_dict     = {}
+
+    # 2. Number of UEs scheduled in shared band
     ul_num_ues_results_dict = {}
+
+    # 3. Total SE of the SN in the shared band
     ul_se_results_dict  = {}
 
-    meth_name = "perform_as_second_step"
     
     # Scheduling technique
     for sched_tech in DMimo_UE_scheduling_techniques:
@@ -122,33 +130,34 @@ def read_parallel_scenarios(task_id: int):
                 ul_se_results_dict[key]      = []
 
                     
-
-    
+    # Number of snashots (scenarios) that were generated
     num_snapshots = networks_configs['num_snapshots']
 
+
+    # 1. Loading each snapshots data
     for ite in range(num_snapshots):
 
         print("Iteration number " + str(ite + 1))
 
-        
-        # Panel selection technique
+        # 2. Setting the panel selection technique
         for panel_tech in DMimo_panel_selection_techniques:
             sce_reader.set_panel_selection_technique(panel_selection_path, panel_tech)
 
-            # Scheduling technique
+            # 3. Setting the UE scheduling technique
             for sched_tech in DMimo_UE_scheduling_techniques:
-                # Scheduling threshold
+
+                # 4. Setting the UE scheduling threshold
                 for sched_thresh in DMimo_UE_scheduling_thresholds:
 
                     sce_reader.set_terminal_scheduling_technique(
-                        scheduling_techniques_path, sched_tech, meth_name, sched_thresh)
+                        scheduling_techniques_path, sched_tech, sched_thresh)
 
                     key = panel_tech + " + " + sched_tech + " + " + str(sched_thresh)
                     
                     (
                     ul_caused_inr, 
                     ul_num_ues, 
-                    ul_sum_se) = sce_reader.compute_uplink_kpis_for_panel_selection_first(ite)
+                    ul_sum_se) = sce_reader.compute_kpis_for_sn_uplink(ite)
                     
                     ul_inr_results_dict[key].append(ul_caused_inr)
                     ul_num_ues_results_dict[key].append(ul_num_ues)

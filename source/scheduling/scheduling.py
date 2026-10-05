@@ -8,7 +8,7 @@ from source.geometry.coordinates import calculate_2d_distances
 class IndividualEstimated_INR:
     
     @classmethod
-    def perform_as_second_step(cls, context):
+    def perform(cls, context):
 
         """
         This class method performs UE scheduling considering that it is a second step after UE panel selecion.
@@ -51,7 +51,7 @@ class IndividualEstimated_INR:
 class CumulativeIndividualEstimated_INR:
 
     @classmethod
-    def perform_as_second_step(cls, context):
+    def perform(cls, context):
     
 
         # OBS: The difference between ls_fading and ls_gain is that ls_gain takes into account the antenna gains!
@@ -92,30 +92,3 @@ class CumulativeIndividualEstimated_INR:
         
         return scheduled_terms
 
-
-
-
-# ____________________________________________
-# APs scheduling techniques
-# ____________________________________________
-
-class StationsIndivEstINR:
-
-    @classmethod
-    def perform(cls, context):
-
-        lsg_coeffs = context.inter_network_lsg
-
-        L = lsg_coeffs.shape[1] * lsg_coeffs.shape[3] 
-        gain_vec = lsg_coeffs[0].reshape(1, L)
-
-        station_max_power = context.station_max_power
-
-        pn_noise_variance = context.pn_noise_variance
-
-
-        estimated_inrs = 10*np.log10( station_max_power * gain_vec / pn_noise_variance)
-
-        scheduled_stations = np.where(estimated_inrs[0] <= context.scheduling_threshold)[0]
-
-        return scheduled_stations

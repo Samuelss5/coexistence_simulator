@@ -78,35 +78,42 @@ class StationSchedulingContext:
 
 
 class SchedulingManager:
+
+
+    """
+    
+    This class is responsible for panel selection and scheduling.
+
+    In order to carry out its respective functions, it needs to know which methods will be used; 
+    these are stored as attributes of the class.
+    
+    """
+
  
     def __init__(self, config):
         self._config = config
+
+
+        # --- Terminal panel selection --- #
         self._panel_selection_technique = None
 
-        # Terminal scheduling
+        # --- Terminal scheduling --- #
         self._terminal_scheduling_technique   = None
-        self._terminal_scheduling_method_name = None
         self._terminal_scheduling_threshold   = None
 
-        # Station scheduling
-        self._station_scheduling_technique   = None
-        self._station_scheduling_method_name = None
-        self._station_scheduling_threshold   = None
  
-
     def set_panel_selection_technique(self, module_path: str, class_name: str) -> None:
+        """
+        This function changes the panel selection method to be used
+        """
         self._panel_selection_technique = MethodLoader.load(module_path, class_name)
 
-    def set_terminal_scheduling_technique(self, module_path: str, class_name: str, method_name: str, threshold: float) -> None:
+    def set_terminal_scheduling_technique(self, module_path: str, class_name: str, threshold: float) -> None:
+        """
+        This function changes the scheduling method to be used
+        """
         self._terminal_scheduling_technique = MethodLoader.load(module_path, class_name)
-        self._terminal_scheduling_method_name = method_name
         self._terminal_scheduling_threshold = threshold
-
-    def set_station_scheduling_technique(self, module_path: str, class_name: str, method_name: str, threshold: float) -> None:
-        self._station_scheduling_technique = MethodLoader.load(module_path, class_name)
-        self._station_scheduling_method_name = method_name
-        self._station_scheduling_threshold = threshold
-
 
 
  
@@ -130,7 +137,9 @@ class SchedulingManager:
             scheduled_term      = scheduled_terminals,
             rng = rng
         )
-        print(context.scheduled_term)
+
+
+        method_name = "perform"
 
         method_to_call = getattr(self._panel_selection_technique, method_name)
         
@@ -163,9 +172,9 @@ class SchedulingManager:
             n_var = pn_n_var
         )
 
-        #getattr
+        method_name = "perform"
 
-        method_to_call = getattr(self._terminal_scheduling_technique, self._terminal_scheduling_method_name)
+        method_to_call = getattr(self._terminal_scheduling_technique, method_name)
 
         scheduled_ues = method_to_call(context)
 
@@ -173,43 +182,33 @@ class SchedulingManager:
 
 
 
-    def schedule_stations(self,
-        inter_network_lsg, inter_network_channel, 
-        station_max_power, pn_noise_variance) -> np.ndarray:
-
-        context = StationSchedulingContext(
-            inter_network_lsg = inter_network_lsg,
-            inter_network_channel = inter_network_channel,
-            scheduling_threshold = self._station_scheduling_threshold,
-            station_max_power = station_max_power,
-            pn_noise_variance = pn_noise_variance
-        )
-
-        return self._station_scheduling_technique.perform(context)
-
-
-
-
-
 
 @dataclass
 class CrossChannels:
 
-    # OBS: Since these variables refer to the links between elements of two networks, we can assume that they store multiple coefficients;
-    #      So, there is no need for a header saying "coeffs" of "coefficients".
+    """
+    This is a data class designed to store channel parameters between elements of two different networks.
+    """
 
+    # OBS: Since these variables refer to the links between elements of two networks, we can assume that they store multiple coefficients;
+    # So, there is no need for a header saying "coeffs" of "coefficients".
+
+    # 1. large scale fading
     pn_term_sn_term_ls_fading: np.ndarray
     pn_term_sn_stat_ls_fading: np.ndarray
     pn_stat_sn_stat_ls_fading: np.ndarray
 
+    # 2. large scale gain
     pn_term_sn_term_ls_gain: np.ndarray
     pn_term_sn_stat_ls_gain: np.ndarray
     pn_stat_sn_stat_ls_gain: np.ndarray
 
+    # 3. Channels Rician factors
     pn_term_sn_term_K: np.ndarray
     pn_term_sn_stat_K: np.ndarray
     pn_stat_sn_stat_K: np.ndarray
 
+    # 4. Channel matrices
     pn_term_sn_term_H: np.ndarray
     pn_term_sn_stat_H: np.ndarray
     pn_stat_sn_stat_H: np.ndarray
@@ -219,9 +218,6 @@ class CrossChannels:
         return cls(*list)
 
 
-@dataclass
-class InterGeometry:
-    pn_term_sn_term_lsg_coeffs: np.ndarray
 
 @dataclass 
 class IntraGeometry:
@@ -237,7 +233,26 @@ class IntraGeometry:
     def read(cls, list):
         return cls(*list)
 
+
+
 class ScenarioReader:
+
+    """
+    
+    This class is responsible for receiving the channel parameters that have been generated 
+    and calculating the KPIs for each respective scenario.
+
+    In order for the KPIs for each scenario to be calculated, it is necessary to specify 
+    to this class which resource management methods it will use: 
+        1. panel selection 
+        2. scheduling 
+        3. threshold
+        4. ...
+
+
+    This class relies on the help of others.
+
+    """
 
     def __init__(self, pn_config, sn_config):
         self.pn_config = FixedServiceConfig.read(pn_config)
@@ -263,8 +278,9 @@ class ScenarioReader:
         self.sn_geometry = IntraGeometry.read(list)
 
     
-    def set_terminal_scheduling_technique(self, path, class_name, method_name, thresh):
-        self._scheduling.set_terminal_scheduling_technique(path, class_name, method_name, thresh)
+    def set_terminal_scheduling_technique(self, path, class_name,thresh):
+
+        self._scheduling.set_terminal_scheduling_technique(path, class_name, thresh)
 
     def set_station_scheduling_technique(self, path, class_name, thresh):
         self._scheduling.set_station_scheduling_technique(path, class_name, thresh)
@@ -273,11 +289,28 @@ class ScenarioReader:
         self._scheduling.set_panel_selection_technique(path, class_name)
 
     
-    def compute_uplink_kpis_for_panel_selection_first(self, ite: int):
+    def compute_kpis_for_sn_uplink(self, ite: int):
 
-        # When the SN is in uplink -> UEs scheduling
+        """
+        This function calculates the KPIs for the coexistence scenario when the SN is in uplink.
 
-        # 1. SN performing UE panel selection
+        To compute the KPIs, it's necessary to determine which UEs will transmit in the shared band.
+
+        The process follows this order:
+
+            1. SN performs UE panel selection
+
+            2. SN performs UE scheduling
+
+            3. SN performs channel estimation
+
+            4. SN performs clustering
+
+            5. SN performs uplink combiners computation
+
+        """
+
+        # --- UE panel selection --- #
         tps_method_name = "perform_as_first_step"
         ues_panels = self._scheduling.select_terminal_panels(
             inter_net_ls_gain   = self.cross_channels.pn_term_sn_term_ls_gain[ite],
@@ -290,7 +323,7 @@ class ScenarioReader:
             method_name         = tps_method_name
         )
 
-        # 1. SN performing UE scheduling to avoid interfering too much 
+        # --- UE scheduling --- # 
         scheduled_ues = self._scheduling.schedule_terminals(
             inter_net_ls_fading = self.cross_channels.pn_term_sn_term_ls_fading[ite],                   
             inter_net_ls_gain   = self.cross_channels.pn_term_sn_term_ls_gain[ite], 
@@ -304,7 +337,7 @@ class ScenarioReader:
         
     
 
-        # SN performing channel estimation considering all UEs
+        # --- channel estimation --- # 
         (
         H_hat_coeffs, 
         C_error_matrices)= self.sn_config.methods["channel_estimation"].compute(
@@ -317,13 +350,11 @@ class ScenarioReader:
             noise_var = self.sn_config.noise_variance
         )
         
-        from source.utils import lin2db
-
-        # All APs serve all UEs
+        # --- AP clustering --- # 
         L = self.sn_config.num_stations * self.sn_config.num_arrays
         clustering_matrix = np.ones((self.sn_config.num_terminals, L))
         
-        # SN computing the uplink combiners
+        # --- SN uplink combiners computation --- #
         sn_ul_combiners = self._signal_processor.compute_uplink_combiners(
             H_hat_coeffs      = H_hat_coeffs,
             C_error_hat  = C_error_matrices,
@@ -333,14 +364,14 @@ class ScenarioReader:
             n_var         = self.sn_config.noise_variance
             )
 
-        # PN dl (terminal) combiners
+        # --- PN downlink precoders computation --- #
         pn_combining = np.ones((self.pn_config.num_terminals, 1))
 
 
-        # Computing SN spectral efficiencies and the caused interference to the PN
+        # --- SN total SE and caused INR --- #
         (
-        sn_ul_spec_effs, 
-        sn_ul_caused_inr_by_all_ues) = self._kpi_calculator.compute_uplink_kpis(
+        spec_effs_sn_ul, 
+        inr_caused_by_sn_ul) = self._kpi_calculator.compute_uplink_kpis(
             sn_H              = self.sn_geometry.H_coeffs[ite], 
             pn_term_sn_term_H = self.cross_channels.pn_term_sn_term_H[ite], 
             pn_stat_sn_stat_H = self.cross_channels.pn_stat_sn_stat_H[ite],
@@ -354,121 +385,27 @@ class ScenarioReader:
             rng = self.rng
             )
 
-        sn_ul_caused_inr_by_all_ues = lin2db(sn_ul_caused_inr_by_all_ues[0])
-        
-        print("Caused INR: ", sn_ul_caused_inr_by_all_ues)
 
+
+        # --- KPI results --- #
+
+        # 1. INR -> converting to logathimic scale
+        from source.utils import lin2db
+        inr_caused_by_sn_ul = lin2db(inr_caused_by_sn_ul)
+
+        # 2. Number of UEs scheduled in the shared band
+        num_scheduled_ues = len(scheduled_ues) 
+
+        # 3. SN total spectral efficiency in the shared band
+        total_se_of_sn_ul = np.sum(spec_effs_sn_ul)
+        
         return (
-            sn_ul_caused_inr_by_all_ues, 
-            len(scheduled_ues), 
-            np.sum(sn_ul_spec_effs)
+            inr_caused_by_sn_ul, 
+            num_scheduled_ues, 
+            total_se_of_sn_ul
             )
         
       
-
-
-    def compute_uplink_kpis_for_scheduling_first(self, ite: int):
-
-        """
-        
-        Consider that the UEs scheduling is performed before the panel selection
-
-        """
-
-        # 1. SN performing UE scheduling to avoid interfering too much 
-        scheduled_ues = self._scheduling.schedule_terminals(
-            inter_net_ls_fading = self.cross_channels.pn_term_sn_term_ls_fading[ite],                   
-            inter_net_ls_gain   = self.cross_channels.pn_term_sn_term_ls_gain[ite], 
-            inter_net_channel   = self.cross_channels.pn_term_sn_term_H[ite], 
-            term_sel_panels     = None, 
-            term_max_p          = self.sn_config.terminal_max_power,
-            term_max_ant_gain   = self.sn_config.methods["terminal_antenna_gain"].g_max,
-            term_min_ant_gain   = self.sn_config.methods["terminal_antenna_gain"].g_max - self.sn_config.methods["terminal_antenna_gain"].am,
-            pn_n_var            = self.pn_config.noise_variance,
-        )
-
-        # Terminal panel selection techniques names
-        tps_method_name = "perform_as_second_step"
-    
-
-        # 2. SN performing UE panel selection
-        ues_panels = self._scheduling.select_terminal_panels(
-            inter_net_ls_gain   = self.cross_channels.pn_term_sn_term_ls_gain[ite],
-            intra_net_ls_gain   = self.sn_geometry.ls_gain_coeffs[ite],
-            inter_net_channel   = self.cross_channels.pn_term_sn_term_H[ite],
-            intra_net_channel   = self.sn_geometry.H_coeffs[ite],
-            scheduled_terminals = scheduled_ues, 
-            num_terminals       = self.sn_config.num_terminals,
-            rng                 = self.rng,
-            method_name         = tps_method_name
-        )
-
-        print("Paineis dos UEs: ", ues_panels)
-
-        from source.utils import lin2db, db2lin
-
-        # SN performing channel estimation considering all UEs
-        (
-        H_hat_coeffs, 
-        C_error_matrices)= self.sn_config.methods["channel_estimation"].compute(
-            H_coeffs        = self.sn_geometry.H_coeffs[ite],
-            R_matrices      = self.sn_geometry.R_matrices[ite],
-            sel_panels      = ues_panels,
-            scheduled_ues   = scheduled_ues,
-            tau_p           = self.sn_config.num_pilot_sequences,
-            ul_max_power    = self.sn_config.terminal_max_power,
-            noise_var       = self.sn_config.noise_variance
-        )
-
-        # All APs serve all UEs
-        L = self.sn_config.num_stations * self.sn_config.num_arrays
-        clustering_matrix = np.ones((self.sn_config.num_terminals, L))
-
-
-        # SN computing the uplink combiners
-        sn_ul_combiners = self._signal_processor.compute_uplink_combiners(
-            H_hat_coeffs      = H_hat_coeffs,
-            C_error_hat  = C_error_matrices,
-            D_clustering = clustering_matrix,
-            scheduled_term     = scheduled_ues,
-            ul_max_p      = self.sn_config.terminal_max_power,
-            n_var         = self.sn_config.noise_variance
-            )
-
-        # PN dl (terminal) combiners
-        pn_combining = np.ones((self.pn_config.num_terminals, 1))
-
-
-        # Computing SN spectral efficiencies and the caused interference to the PN
-        (
-        sn_ul_spec_effs, 
-        sn_ul_caused_inr_by_all_ues) = self._kpi_calculator.compute_uplink_kpis(
-            sn_H              = self.sn_geometry.H_coeffs[ite], 
-            pn_term_sn_term_H = self.cross_channels.pn_term_sn_term_H[ite], 
-            pn_stat_sn_stat_H = self.cross_channels.pn_stat_sn_stat_H[ite],
-            clustering        = clustering_matrix, 
-            sn_sched_term     = scheduled_ues, 
-            sn_sel_panels     = ues_panels, 
-            sn_ul_combining   = sn_ul_combiners, 
-            pn_term_combining = pn_combining, 
-            sn_term_max_power = self.sn_config.terminal_max_power, 
-            pn_stat_max_power = self.pn_config.station_max_power, 
-            rng = self.rng
-            )
-
-        sn_ul_caused_inr_by_all_ues = lin2db(sn_ul_caused_inr_by_all_ues[0])
-
-        return (
-            sn_ul_caused_inr_by_all_ues, 
-            len(scheduled_ues), 
-            np.sum(sn_ul_spec_effs) 
-
-            )
-
-
-
-
-
 
 
     def compute_downlink_kpis(self, ite: int):

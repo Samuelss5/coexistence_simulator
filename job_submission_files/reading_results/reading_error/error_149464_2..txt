@@ -1,2 +1,0 @@
-/home/users/samuelss/coexistence_simulator/source/kpis.py:137: RuntimeWarning: invalid value encountered in divide
-  sinrs = ul_signals / (ul_intranet_interf + ul_internet_interf + ul_noise)

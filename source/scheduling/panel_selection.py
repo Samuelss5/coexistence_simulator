@@ -2,63 +2,51 @@ import numpy as np
 
 from source.ScenarioReader import PanelSelectionContext
 
-class TpsAltruisticFromLsfGain:
+class TpsSelfishFromLsfGain:
     
     @classmethod
-    def perform_as_first_step(cls, context) -> np.ndarray:
-
-        """
-        This method consider that the panel selection
-        """
-
-        # Large scale gain coefficientes between the UEs and the FS rx
-        ls_gain_coeffs = context.inter_net_ls_gain
+    def perform(cls, context) -> np.ndarray:
+        ls_gain_coeffs = context.intra_net_ls_gain
         
         sel_panels = np.empty(context.num_term, dtype=int)
-    
-        for k in range(context.num_term):
-
-            # Vector containing the ls gains between the k-th UE panels and the FS rx
-            g_k = ls_gain_coeffs[:,k, ...]
-
-            sp_k = np.argmin(g_k)
-
-            sel_panels[k] = sp_k            
+        
+        for ue_id in range(context.num_term):
             
+            gains_ue = ls_gain_coeffs[ue_id, ...] # (n_ap, n_ue_panel, n_ap_array)
+            gains_ue = gains_ue.transpose(1,0,2)
+            gains_ue = gains_ue.reshape(gains_ue.shape[0], -1) # (n_ue_panel, n_ap x n_ap_array)
+            gains_ue_mean = gains_ue.mean(axis = 1) # (n_ue_panel,)
+
+            sel_panels[ue_id] = np.argmax(gains_ue_mean)
+
         return sel_panels
 
+
+class TpsAltruisticFromLsfGain:
+
     @classmethod
-    def perform_as_second_step(cls, context):
+    def perform(cls, context) -> np.ndarray:
 
         """
-        This method consider that the panel selection
+            This panel selection is designed to interfere as little as possible with the PN:
+            - Uses the large scale fading parameters to estimate the interference
         """
-
-        # OBS: Consider that UEs scheduled has already been performed
-
-        # Vector containing the indexes of the scheduled UEs
-        scheduled_ues = context.scheduled_term
-
+        
         # Large scale gain coefficientes between the UEs and the FS rx
         ls_gain_coeffs = context.inter_net_ls_gain
 
+        # array storing the indices of the selected panels 
         sel_panels = np.empty(context.num_term, dtype=int)
 
-        for k in scheduled_ues:
+        for ue_id in range(context.num_term):
 
-            # Vector containing the ls gains between the k-th UE panels and the FS rx
-            g_k = ls_gain_coeffs[:, k, ...]
-            print("g_k: ",g_k)
-            sp_k = np.argmin(g_k)
+            g_vec = ls_gain_coeffs[:,ue_id, ...]
 
-            sel_panels[k] = sp_k
+            panel_id = np.argmin(g_vec)
+
+            sel_panels[ue_id] = panel_id
 
         return sel_panels
-
-
-
-
-
 
 
 class TpsAltruisticFromChannelGain:
@@ -67,8 +55,11 @@ class TpsAltruisticFromChannelGain:
     def perform(cls, context) -> np.ndarray:
 
         """
-        This method consider that the panel selection
+            This panel selection is designed to interfere as little as possible with the PN:
+            - Uses the estimated channel coefficients to estimate the interference
         """
+
+        ...
 
         channel_matrix = context.inter_network_channel
 
@@ -78,7 +69,7 @@ class TpsAltruisticFromChannelGain:
 
         selected_panels = np.zeros(context.num_terminals, dtype=int)
     
-        for term in range(context.num_terminals):
+        for ue_id in range(context.num_terminals):
 
             # Channel between the k-th UE panels and the FS receiver
             h_k = channel_matrix[0, term, 0, ...]
@@ -91,16 +82,6 @@ class TpsAltruisticFromChannelGain:
             
 
         return selected_panels
-
-    # @classmethod
-    # def perform_second_step(cls, context):
-
-    #     """
-    #     Consider that the panel selection is 
-        
-    #     """
-
-    #     scheduled_ues = context. 
 
 
 
@@ -159,29 +140,16 @@ class TpsSelfishFromChannelGain:
             
 class TpsRandomic:
 
+    """
+        This panel selection is designed to be performed randomly:
+        - Uses no criterion
+    """
+
     @classmethod
-    def perform_as_first_step(cls, context: PanelSelectionContext) -> np.ndarray:
+    def perform(cls, context: PanelSelectionContext) -> np.ndarray:
 
         sel_panels = context.rng.integers(0, context.num_panels, size=context.num_term)
 
         return sel_panels
 
-    @classmethod
-    def perform_as_second_step(cls, context):
 
-        # Vector containing the indexes of the scheduled UEs
-        scheduled_ues = context.scheduled_term
-
-        # Vector that will store the indexes of the selected panels
-        sel_panels = np.empty(context.num_term, dtype=int)
-
-        for k in scheduled_ues:
-            sel_panels[k] = context.rng.integers(0, context.num_panels)
-
-        return sel_panels
-
-class NoSelection:
-
-    @classmethod
-    def compute(cls, num_terminals):
-        return np.zeros(num_terminals)
